@@ -86,9 +86,11 @@ This creates `dist/<name>-<version>.zip`, or `dist/<name>.zip` when the program 
 <name>/
     README.md
     requirements.txt       when it is in the project folder
-    code/                  without __pycache__, venv or *.pyc
+    code/                  without __pycache__, venv, .git, *.pyc or the files you exclude
     install.py             made by this app from the project options
 ```
+
+**Exclude files** lists every file that would go into the zip. Tick the ones to leave out, such as a settings file that belongs to this computer (for example plugin_tool's `.plugin_build_exclusions.json`). The ticks are remembered for each project when you press Make Zip. Nothing is left out until you tick it, hidden files (names starting with a dot) included. The main program and `requirements.txt` can't be left out, because `install.py` needs them.
 
 The page lists the zips already in `dist/`, newest first, and you can click one to download it. It can also show you the `install.py` it will generate.
 
@@ -99,15 +101,19 @@ On the target computer, unzip the release and run:
 ```
 python3 install.py                      (Windows: py install.py)
 python3 install.py /home/pi/scanCam     (give the install folder straight away)
+python3 install.py --no-run             (install without starting the program)
+python3 install.py --no-gui             (ask for the install folder in the terminal, not in a window)
 ```
 
 It does three things:
 
-1. It copies `README.md`, `code/` and `requirements.txt` into the install folder. It asks for the folder if you don't give one; the default is `~/<name>`.
+1. It copies `README.md`, `code/` and `requirements.txt` into the install folder. If you don't give the folder, it asks for it:
+   - **On a desktop**, a folder window opens. Go to where you want to install and press OK: a `<name>` folder is made there, or an existing `<name>` folder you picked is installed over. To name the folder yourself, type its full path in the **Selection** box: a folder that doesn't exist yet is created and used as typed (parent folders too). You then confirm the final path. This needs Python's tkinter: Windows has it, and on Debian or Raspberry Pi OS it's the `python3-tk` package.
+   - **Otherwise** (over SSH, on a computer without a screen, without tkinter, or with `--no-gui`), it asks in the terminal. The default is `~/<name>`.
 2. It writes a launcher, `run.sh` on Linux or `run.bat` on Windows, which starts the main program with the venv's Python.
 3. It deletes and recreates `venv/` in the install folder, then runs `venv/bin/python -m pip install -r requirements.txt`.
 
-Running it again updates the program files and recreates the venv. When it has finished, start the program with `<install folder>/run.sh`. On Debian and Raspberry Pi OS, the target computer also needs `python3-venv`.
+When the install succeeds, it starts the program straight away with `run.sh` (Windows: `run.bat`), unless you add `--no-run`. Its exit code is the program's. Later, start the program with `<install folder>/run.sh`. Running `install.py` again updates the program files and recreates the venv. On Debian and Raspberry Pi OS, the target computer also needs `python3-venv`.
 
 ## Settings
 

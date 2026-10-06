@@ -73,10 +73,11 @@ PORT = 0
 SETTINGS_NAME = ".standalone_tools.json"
 SETTINGS_FILE = os.path.join(SCRIPT_DIR, SETTINGS_NAME)
 RECENT_MAX = 8   # most recent projects remembered
+FILES_LIMIT = 3000   # most files Make Zip's Exclude files list shows
 CODE_DIR = "code"
 README = "README.md"
-# Never part of a release
-SKIP_DIRS = ("__pycache__", "venv")
+# Never part of a release. Other files can be left out with Make Zip's Exclude files list (remembered per project)
+SKIP_DIRS = ("__pycache__", "venv", ".git")
 SKIP_SUFFIXES = (".pyc",)
 # Project options until they are changed on a tool page
 DEFAULT_SITE_PACKAGES = True
@@ -468,6 +469,9 @@ def project_view(path, data=None):
                     venv=os.path.isfile(venv_python(os.path.join(path, "venv"))),
                     launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "",
                     zips=dist_zips(path))
+        files, excluded, truncated = zip_files(path, opts, data)
+        view.update(files=files, excluded=excluded, files_truncated=truncated,
+                    needed=sorted(needed_files(path, opts)))
     return view
 
 
@@ -500,11 +504,16 @@ program there, then creates its Python venv and installs requirements.txt into i
 Nothing is installed system-wide, so no sudo is needed.
 
 Run from the unzipped folder with: python3 install.py  (on Windows: py install.py)
-The install directory can also be given straight away: python3 install.py /home/pi/__NAME__
+The install directory is chosen in a folder window when there is a desktop and Python has tkinter
+(otherwise it is asked for in the terminal; --no-gui always asks in the terminal).
+It can also be given straight away: python3 install.py /home/pi/__NAME__
+Once installed, the program is started with its launcher (run.sh, or run.bat on Windows);
+add --no-run to install without starting it.
 Running it again updates the program files and recreates the venv.
 (Made by standalone_tools.py.)
 """
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -536,13 +545,73 @@ else:
                        f'exec venv/bin/python -u code/{MAIN} "$@"\n')
 
 
-def ask_target() -> Path:
+def gui():
+    """A hidden Tk window for showing dialogs, or None when there is no desktop or Python has no tkinter
+    (e.g. over SSH, on a Pi without a screen, or Debian without the python3-tk package). Says why when there is none."""
+    if not IS_WINDOWS and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+        print("No folder window: no desktop here (DISPLAY is not set), so asking in the terminal")
+        return None
+    try:
+        import tkinter
+        root = tkinter.Tk()
+    except Exception as e:
+        print(f"No folder window ({type(e).__name__}: {e}), so asking in the terminal")
+        return None
+    # A hidden window's "on top" setting does not reach its dialogs on every desktop (they can open behind an
+    # editor or the terminal), so show a tiny transparent window, raised and focused, for the dialogs to open over
+    root.title(f"Install {NAME}")
+    root.geometry('1x1+0+0')
+    try:
+        root.attributes('-alpha', 0.0)
+    except Exception:
+        pass
+    root.attributes('-topmost', True)
+    root.deiconify()
+    root.lift()
+    root.focus_force()
+    root.update()
+    return root
+
+
+def ask_target_gui(root) -> Path:
+    """Choose the install directory in a folder window. Returns None if cancelled."""
+    from tkinter import filedialog, messagebox
+    while True:
+        picked = filedialog.askdirectory(
+            parent=root, initialdir=str(Path.home()), mustexist=False,
+            title=f"Choose where to install {NAME} (a {NAME} folder is made in it), or type a new folder")
+        if not picked:
+            return None
+        picked = Path(picked).expanduser().resolve()
+        # A folder typed in that does not exist yet is made and used as it is. Choosing an existing install (a folder
+        # called NAME) installs over it; any other existing folder gets a NAME folder made in it
+        target = picked if not picked.exists() or picked.name == NAME else picked / NAME
+        if target.exists() and not target.is_dir():
+            messagebox.showerror(f"Install {NAME}", f"{target} is a file, not a folder.", parent=root)
+            continue
+        answer = messagebox.askyesnocancel(
+            f"Install {NAME}", f"Install {NAME} into\n\n{target}\n\n"
+            "Yes to install, No to choose another folder, Cancel to stop.", parent=root)
+        if answer is None:
+            return None
+        if answer:
+            return target
+
+
+def ask_target_text() -> Path:
     try:
         answer = input(f"Enter the directory to install {NAME} into [{default_target}]: ").strip()
     except EOFError:
         # No terminal to answer from (e.g. piped input), so take the default.
         answer = ''
     return Path(answer).expanduser().resolve() if answer else default_target
+
+
+def show_error(root, text):
+    """Report a failed install in a message box too, when the folder was chosen in a window."""
+    if root is not None:
+        from tkinter import messagebox
+        messagebox.showerror(f"Install {NAME}", text, parent=root)
 
 
 def copy_program(source: Path, target: Path):
@@ -587,18 +656,49 @@ def main():
     parser = argparse.ArgumentParser(description=f'Install {NAME}')
     parser.add_argument('target', nargs='?', help=f'the directory to install into (asked for when left out)')
     parser.add_argument('--source', help='the folder holding README.md and code (default: the folder this script is in)')
+    parser.add_argument('--no-run', action='store_true', help=f'do not start {NAME} once it is installed')
+    parser.add_argument('--no-gui', action='store_true', help='ask for the install directory in the terminal, not in a window')
     args = parser.parse_args()
     source = Path(args.source).expanduser().resolve() if args.source else here
-    target = Path(args.target).expanduser().resolve() if args.target else ask_target()
+    root = None
+    if args.target:
+        target = Path(args.target).expanduser().resolve()
+    else:
+        root = None if args.no_gui else gui()
+        target = ask_target_gui(root) if root is not None else ask_target_text()
+        if target is None:
+            sys.exit("Install cancelled")
+        print(f"Installing {NAME} into {target}", flush=True)
     try:
         copy_program(source, target)
         create_venv(target)
+    except SystemExit as e:   # create_venv's own message (the venv module is missing)
+        show_error(root, str(e))
+        raise
     except subprocess.CalledProcessError as e:
-        sys.exit(f"Install failed: {' '.join(e.cmd)} exited with {e.returncode}")
+        message = f"Install failed: {' '.join(e.cmd)} exited with {e.returncode}"
+        show_error(root, message + "\n\nThe terminal shows what went wrong.")
+        sys.exit(message)
     except OSError as e:
+        show_error(root, f"Install failed: {e}")
         sys.exit(f"Install failed: {e}")
+    if root is not None:
+        root.destroy()
+    launcher = target / launcher_name
     print()
-    print(f"{NAME} is installed in {target}. Start it with: {target / launcher_name}")
+    print(f"{NAME} is installed in {target}. Start it with: {launcher}")
+    if args.no_run:
+        return
+    print(f"Starting {NAME} with {launcher}")
+    print(flush=True)   # before the program's own output
+    try:
+        # run.bat needs cmd; run.sh is executable
+        code = subprocess.call(['cmd', '/c', str(launcher)] if IS_WINDOWS else [str(launcher)], cwd=str(target))
+    except KeyboardInterrupt:   # Ctrl+C stops the program; nothing more to report
+        code = 130
+    except OSError as e:
+        sys.exit(f"Could not start {launcher}: {e}")
+    sys.exit(code)
 
 
 if __name__ == '__main__':
@@ -617,11 +717,13 @@ def make_install_py(name, opts, requirements):
 
 
 # ---------- Make Zip: the job ----------
-def release_files(project):
-    """(path on disk, path inside the zip below <name>/) for README.md, requirements.txt and everything in code."""
+def release_files(project, exclude=()):
+    """(path on disk, path inside the zip below <name>/) for README.md, requirements.txt and everything in code,
+    leaving out the paths (relative to the project) in exclude."""
+    skip = set(exclude)
     for top in (README, "requirements.txt"):
         path = os.path.join(project, top)
-        if os.path.isfile(path):
+        if os.path.isfile(path) and top not in skip:
             yield path, top
     code_dir = os.path.join(project, CODE_DIR)
     for dirpath, dirnames, filenames in os.walk(code_dir):
@@ -629,10 +731,36 @@ def release_files(project):
         for name in sorted(filenames):
             if not name.endswith(SKIP_SUFFIXES):
                 path = os.path.join(dirpath, name)
-                yield path, os.path.relpath(path, project).replace(os.sep, "/")
+                rel = os.path.relpath(path, project).replace(os.sep, "/")
+                if rel not in skip:
+                    yield path, rel
 
 
-def run_zip_job(lines, project, opts):
+def needed_files(project, opts):
+    """Files a release cannot do without (install.py runs the main program and installs requirements.txt)."""
+    return {f"{CODE_DIR}/{opts['main']}", requirements_file(project)} - {"", f"{CODE_DIR}/"}
+
+
+def zip_files(project, opts, data=None):
+    """For Make Zip's Exclude files list: (files, excluded, truncated). files are the paths (relative to the project)
+    that can go into the zip, at most FILES_LIMIT of them; excluded the ones ticked last time for this project
+    that still exist (none until something has been ticked)."""
+    files = []
+    for _, rel in release_files(project):
+        files.append(rel)
+        if len(files) > FILES_LIMIT:
+            break
+    truncated = len(files) > FILES_LIMIT
+    files = files[:FILES_LIMIT]
+    saved = (data or load_store())["projects"].get(project)
+    saved = saved.get("exclude") if isinstance(saved, dict) else None
+    present = set(files)
+    excluded = [x for x in saved if isinstance(x, str) and x in present] if isinstance(saved, list) else []
+    needed = needed_files(project, opts)
+    return files, [x for x in excluded if x not in needed], truncated
+
+
+def run_zip_job(lines, project, opts, exclude):
     job = zip_job
     ok = False
     name = os.path.basename(project)
@@ -644,7 +772,9 @@ def run_zip_job(lines, project, opts):
         os.makedirs(os.path.dirname(out), exist_ok=True)
         count = 0
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
-            for path, rel in release_files(project):
+            if exclude:
+                lines.append("Left out (Exclude files): " + ", ".join(exclude))
+            for path, rel in release_files(project, exclude):
                 if job.stopping:
                     raise InterruptedError
                 z.write(path, f"{name}/{rel}")
@@ -1159,16 +1289,25 @@ def api_config_set():
 # ---------- routes: Make Zip ----------
 @app.post("/makezip/api/start")
 def zip_start():
-    project, opts, err = check_project((request.get_json(silent=True) or {}).get("project", ""))
+    d = request.get_json(silent=True) or {}
+    project, opts, err = check_project(d.get("project", ""))
     if err:
         return jsonify(error=err), 400
+    exclude = d.get("exclude", [])
+    if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
+        return jsonify(error="Invalid exclusion list"), 400
+    if not set(exclude) <= {rel for _, rel in release_files(project)}:
+        return jsonify(error="An excluded file is not in the project"), 400
+    needed = set(exclude) & needed_files(project, opts)
+    if needed:
+        return jsonify(error=f"{', '.join(sorted(needed))} cannot be left out: install.py needs it"), 400
     lines = zip_job.begin()
     if lines is None:
         return jsonify(error="Already running - stop it first"), 409
-    err = remember_project(project)
+    err = remember_project(project, exclude=sorted(exclude))   # the ticks come back next time
     if err:
-        lines.append(f"Could not remember this selection: {err}")
-    threading.Thread(target=run_zip_job, args=(lines, project, opts), daemon=True).start()
+        lines.append(f"Could not remember these selections: {err}")
+    threading.Thread(target=run_zip_job, args=(lines, project, opts, exclude), daemon=True).start()
     return jsonify(ok=True)
 
 

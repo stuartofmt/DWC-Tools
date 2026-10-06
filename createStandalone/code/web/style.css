@@ -45,3 +45,7 @@
  .opts label.block{display:block;margin-top:.5rem}
  .opts label.block input:not([type=checkbox]){width:100%;box-sizing:border-box;margin-top:.25rem}
  .field input[type=checkbox]{width:auto;margin:0 .4rem 0 0}
+ #exlist{max-height:14rem;overflow:auto;border:1px solid #888;border-radius:6px;padding:.5rem;margin-top:.25rem}
+ #exlist label{display:block;font:13px ui-monospace,monospace}
+ #exlist small{display:block;margin-bottom:.4rem;font:12px system-ui,sans-serif;opacity:.75}
+ details#exbox{margin:.5rem 0}

@@ -5,6 +5,10 @@
 <button id="go">Make Zip</button> <button id="stop">Stop</button>
 <button id="exit">Exit</button> <button onclick="location.href='/settings'">Settings</button>
 <span id="status"></span>
+<details id="exbox" hidden>
+  <summary id="excount">Exclude files (0)</summary>
+  <div id="exlist"></div>
+</details>
 <details id="zipbox" hidden>
   <summary id="zipcount">Zips in dist</summary>
   <table class="zips"><tbody id="ziplist"></tbody></table>
