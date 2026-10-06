@@ -12,7 +12,8 @@ Setup (Linux, e.g. Raspberry Pi OS):  sudo apt install python3-venv git nodejs n
 Setup (Windows 10 or later):          install Python 3.8+, Git for Windows and Node.js
 Install: unzip the release and run python3 install.py (Windows: py install.py). It copies the app to an install folder,
          creates its venv with Flask in it and adds run.sh / run.bat, then starts the app (unless --no-run is given).
-Run:     run.sh (Windows: run.bat) in the install folder; from a copy of the repository, ./run.sh (makes the venv first)
+Run:     run.sh (Windows: run.bat) in the install folder; from a copy of the repository, ./run.sh once the venv exists
+         (made by Prepare in createStandalone, or: python3 -m venv venv; venv/bin/python -m pip install -r code/requirements.txt)
 The operating system (Linux or Windows) is detected at start-up; no zip program is needed on either.
 Keep the web folder (the pages' HTML, CSS and JS) next to this script.
 Open:    the address printed at start-up: this computer's network address (or 127.0.0.1 when Settings says
@@ -1214,7 +1215,8 @@ def build_readme(is_windows):
                 '(internet access is needed), and adds <code>run.sh</code>. <b>When the install succeeds it starts the app straight away</b> '
                 '(add <code>--no-run</code> to install without starting it). After that, start it with <code>run.sh</code> in the install folder. '
                 'Running <code>install.py</code> again updates the app and keeps your settings.</p>'
-                '<p>From a copy of the repository, start it with <code>./run.sh</code> instead: that makes the venv the first time.</p>'
+                '<p>From a copy of the repository, create the venv once (or run Prepare in createStandalone on the folder), '
+                'then start it with <code>./run.sh</code>.</p>'
                 '<p>No zip program is needed: the app makes zip files itself.</p>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, so it is hidden: use <code>ls -a</code> in that folder to see it.",
             "__NOT_FOUND_ROW__": '<tr><td>"Could not start git / npm / node"</td><td>Install it: '

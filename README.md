@@ -42,15 +42,14 @@ Running `install.py` again updates the app's files and recreates the venv. Your 
 
 ### From a copy of the repository
 
-Run `./run.sh` in the `plugin_tool` folder. If there is no venv yet, `run.sh` creates one there and installs `code/requirements.txt` into it, so the first start needs internet access. After that, it reinstalls only when a `requirements.txt` has changed. Delete the `venv` folder to have it rebuilt from scratch.
-
-On Windows, create the venv yourself and start the app with it:
+`run.sh` starts the app with the `venv` in the `plugin_tool` folder, so that venv must exist first. Either run **Prepare** on the `plugin_tool` folder in createStandalone, or create it yourself, once:
 
 ```
-py -m venv venv
-venv\Scripts\python -m pip install -r code\requirements.txt
-venv\Scripts\python code\plugin_tools.py
+python3 -m venv venv                                   (Windows: py -m venv venv)
+venv/bin/python -m pip install -r code/requirements.txt   (Windows: venv\Scripts\python -m pip install -r code\requirements.txt)
 ```
+
+Then start the app with `./run.sh` (Windows: `venv\Scripts\python code\plugin_tools.py`).
 
 ## Starting
 
