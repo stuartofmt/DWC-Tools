@@ -30,3 +30,10 @@
  .doc code{font-family:ui-monospace,monospace;font-size:.95em}
  .doc table{border-collapse:collapse;margin:.5rem 0}
  .doc td,.doc th{border:1px solid #888;padding:.35rem .7rem;text-align:left;vertical-align:top}
+ .pick{display:flex;gap:.5rem;align-items:flex-start}
+ .pick input{flex:1;min-width:0}
+ #browser{width:min(40rem,90vw);border:1px solid #888;border-radius:10px}
+ #browser .pick{margin-top:.5rem}
+ #brlist{height:50vh;overflow:auto;border:1px solid #888;border-radius:6px;margin:.5rem 0 1rem}
+ #brlist button{display:block;width:100%;text-align:left;border:0;background:none;padding:.35rem .6rem;font:14px ui-monospace,monospace}
+ #brlist button:hover{background:#2d7ff922}

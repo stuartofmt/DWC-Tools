@@ -24,24 +24,29 @@ On the network setting, this computer needs a network connection when the app st
 <h3>Folders</h3>
 <p>Both tools expect this layout. <b>Create a Plugin</b> only lists what is already there, and <b>Create DWC Version</b> creates the DWC version folders for you.
 Until you set them on the Settings page, both folders are the folder this app is installed in, so a downloaded version such as <code>3.7</code> appears right next to <code>plugin_tools.py</code>. (That folder must be writable, or Create DWC Version cannot download into it: pick another folder in Settings if it isn't.) Only folders named like a DWC version (starting with a digit, such as
-<code>3.5.1</code>) are listed as versions, and a plugin is listed once it has at least one <code>plugin&lt;version&gt;</code> folder.</p>
+<code>3.5.1</code>) are listed as versions, and a plugin is listed once it has at least one plugin version folder. A plugin version folder can have any name
+(such as <code>plugin3.7.x</code> or <code>Version1</code>): it is any sub-folder of the plugin's folder with a <b>Code folder</b>, the folder
+holding <code>plugin.json</code>. That is the plugin version folder itself or a folder up to 3 levels below it, such as <code>Code</code>
+(<code>node_modules</code>, <code>dist</code>, <code>pkg</code>, <code>venv</code> and hidden folders are not searched).
+Other sub-folders, such as <code>Documents</code>, are not listed.</p>
 <pre>&lt;DWC versions folder&gt;/
     3.5.1/                    one folder per DWC version
     3.6-dev/
 &lt;Plugins folder&gt;/
     &lt;plugin name&gt;/
-        plugin1.2.3/          one folder per plugin version, named "plugin" + the version
-            plugin.json       the plugin manifest
-            ...               the plugin's files
-          or, with the "Code folder" setting (empty by default) set to e.g. Code:
-            Code/
-                plugin.json
-                ...</pre>
+        plugin3.7.x/          one folder per plugin version, with any name (it is shown as the version)
+            Code/             the Code folder: found automatically, as it holds plugin.json
+                plugin.json   the plugin manifest
+                ...           the plugin's files
+          or, with no Code folder, straight in the plugin version folder:
+            plugin.json
+            ...</pre>
 <p>The Settings page also has the <b>Preferred port</b> for this tool's own web page. <code>0</code>, the default, means no preference:
 the first free port from 17800 is used. A change takes effect the next time the app starts.
 This tool is currently running at <code id="cur-url">...</code>.</p>
 <p>Currently in use: DWC versions in <code id="cur-dwc">...</code>, plugins in <code id="cur-plugins">...</code>.
 Change them on the <a href="/settings">Settings</a> page, for example if you move things to another disk.
+Type a path, or press <b>Browse</b> to pick a folder. Browse shows the folders on the computer running this app, even when the page is open on another computer.
 Settings can't be changed while a job is running.</p>
 
 <h3>Create DWC Version: get a DWC version running</h3>
@@ -64,6 +69,10 @@ If the address doesn't answer 200 within 30 seconds, the log says so and the job
 <h3>Create a Plugin: build or zip a plugin</h3>
 <ol>
   <li>Choose the <b>DWC</b> version, the <b>Plugin</b> and its <b>Version</b>.</li>
+  <li>Check the <b>Code folder</b>: the folder holding <code>plugin.json</code>, relative to the plugin version folder (<code>.</code> is that folder itself).
+      It is filled in with the first one found. If a plugin version has <code>plugin.json</code> in more than one place, the others are listed under the box
+      and offered as you type. Type another folder to use that instead: it is remembered for that plugin version once you press Build.
+      <b>Automatic</b> goes back to the one found.</li>
   <li>Press <b>Build</b>. What happens depends on the plugin's <code>plugin.json</code>:
     <ul>
       <li><b>No <code>dwcVersion</code> entry</b> (for example a plugin that only runs on the Pi): the contents of the Code folder are zipped. No build is needed.</li>
@@ -72,8 +81,10 @@ If the address doesn't answer 200 within 30 seconds, the log says so and the job
           <code>*.log</code> files in the plugin version folder are cleared first.</li>
     </ul></li>
   <li>The result is written in the plugin version folder (the one containing <code>plugin.json</code> or the Code folder) as
-      <code>&lt;plugin version&gt;-&lt;plugin name&gt;-&lt;manifest version&gt;.zip</code>, and the log ends with its size and path.
-      Any older <code>.zip</code> files in that folder are removed.</li>
+      <code>&lt;plugin name&gt;-&lt;manifest version&gt;.zip</code> (the version from <code>plugin.json</code>), and the log ends with its size and path.
+      Any older <code>.zip</code> files in that folder are removed. From DWC 3.7, a build of a stable plugin version (one without
+      <code>-beta</code>, <code>-rc</code> ...) also makes <code>&lt;plugin name&gt;-&lt;manifest version&gt;-srcmap.zip</code>,
+      the source maps kept out of the plugin zip for looking up error stack traces. It is put next to the plugin zip and is not needed to install the plugin.</li>
 </ol>
 
 <h3>Leaving files out</h3>
@@ -102,7 +113,9 @@ and the two folders are kept until you change them. They are all stored in one s
 <h3>Stop and Exit</h3>
 <ul>
   <li><b>Stop</b> ends the running job in that tool, including the dev server if it is running.</li>
-  <li><b>Exit</b> stops everything and shuts the app down. Closing the browser tab does <b>not</b> stop it, so use Exit (or press Ctrl+C in the terminal) when you have finished.</li>
+  <li><b>Exit</b> stops everything and shuts the app down. The app also shuts itself down, stopping any job and the DWC dev server, when every one of its tabs has been closed:
+      about 10 seconds after the last tab closes, or up to about 2 minutes if the browser was closed without warning (for example after a crash).
+      Reloading a page or moving to another page of the app does not count as closing it. Until a browser has opened the app, it keeps running.</li>
   <li>The Home page shows which tools are currently running.</li>
 </ul>
 
