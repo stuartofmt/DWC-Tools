@@ -7,6 +7,13 @@
 <button id="go">Build</button> <button id="stop">Stop</button>
 <button id="exit">Exit</button> <button onclick="location.href='/settings'">Settings</button>
 <span id="status"></span>
+<div class="field">
+  <label for="code"><b>Code folder</b> (the folder holding <code>plugin.json</code>, inside the plugin version folder)</label>
+  <div class="pick"><input id="code" list="codelist" autocomplete="off"><button type="button" id="codeauto">Automatic</button></div>
+  <datalist id="codelist"></datalist>
+  <div class="note" id="coden"></div>
+</div>
+<p class="note bad" id="noplugins" hidden></p>
 <details>
   <summary id="excount">Exclude files (0)</summary>
   <div id="exlist"></div>

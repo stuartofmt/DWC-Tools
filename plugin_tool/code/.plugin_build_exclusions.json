@@ -1,0 +1,21 @@
+{
+  "format": 2,
+  "config": {
+    "dwc_versions_dir": "/home/stuart/DWC/DWCVersions",
+    "plugins_dir": "/home/stuart/DWC/Plugins"
+  },
+  "exclusions": {
+    "3.7.0-rc.2": {
+      "multiCam": {},
+      "duetPrintGuard": {}
+    }
+  },
+  "last": {
+    "createplugin": {
+      "dwc": "3.7.0-rc.2",
+      "plugin": "duetPrintGuard",
+      "plugin_version": "plugin3.7.x"
+    }
+  },
+  "code_paths": {}
+}

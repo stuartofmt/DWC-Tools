@@ -3,8 +3,9 @@
   "config": {
     "projects_dir": "/home/stuart/DWC"
   },
-  "project": "/home/stuart/DWC/Tools/createStandalone",
+  "project": "/home/stuart/DWC/scanCam",
   "recent": [
+    "/home/stuart/DWC/scanCam",
     "/home/stuart/DWC/Tools/createStandalone",
     "/home/stuart/DWC/Tools/plugin_tool"
   ],

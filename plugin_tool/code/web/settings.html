@@ -3,22 +3,17 @@
 <h2>Settings</h2>
 <div class="field">
   <label for="dv"><b>DWC versions folder</b></label>
-  <input id="dv" autocomplete="off">
+  <div class="pick"><input id="dv" autocomplete="off"><button type="button" data-browse="dv">Browse&hellip;</button></div>
   <div class="note" id="dvn"></div>
 </div>
 <div class="field">
   <label for="pd"><b>Plugins folder</b></label>
-  <input id="pd" autocomplete="off">
+  <div class="pick"><input id="pd" autocomplete="off"><button type="button" data-browse="pd">Browse&hellip;</button></div>
   <div class="note" id="pdn"></div>
 </div>
-<p class="note">Folders must already exist. Enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\DWC</code> on Windows (<code>~</code> is fine too).
+<p class="note">Folders must already exist. Press Browse to pick one, or enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\DWC</code> on Windows (<code>~</code> is fine too).
 Until you change them, both show the folder this app is installed in (the default). Clear a box, or press Reset to defaults, to go back to it.
 Create DWC Version puts new versions in the first folder; Create a Plugin reads the DWC versions from it and the plugins from the second.</p>
-<div class="field">
-  <label for="cp"><b>Code folder</b> inside each plugin version folder</label>
-  <input id="cp" autocomplete="off">
-  <div class="note">A relative path, not a full one: the folder holding <code>plugin.json</code>, inside <code>&lt;Plugins folder&gt;/&lt;plugin&gt;/plugin&lt;version&gt;</code>, such as <code>Code</code>. Leave empty for the default: the plugin version folder itself (a leading slash, as in <code>/Code</code>, is fine).</div>
-</div>
 <div class="field">
   <label for="pp"><b>Preferred port</b> for this tool's web page</label>
   <input id="pp" inputmode="numeric" autocomplete="off">
@@ -39,3 +34,10 @@ Create DWC Version puts new versions in the first folder; Create a Plugin reads 
 </div>
 <button id="save">Save</button> <button id="reset">Reset to defaults</button> <span id="msg"></span>
 <p class="note" id="file"></p>
+<dialog id="browser">
+  <b id="brtitle"></b>
+  <div class="pick"><input id="brpath" autocomplete="off"><button type="button" id="brgo">Go</button></div>
+  <button type="button" id="brup">&uarr; Up</button> <span class="note" id="brnote"></span>
+  <div id="brlist"></div>
+  <button type="button" id="brok">Choose this folder</button> <button type="button" id="brcancel">Cancel</button>
+</dialog>
