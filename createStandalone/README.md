@@ -70,6 +70,8 @@ Prepare works on the project folder itself:
    - For packages that aren't installed, the name comes from a short list of well-known names (`cv2` becomes `opencv-python`, `PIL` becomes `Pillow`), or is otherwise assumed to be the import name.
    - Missing packages are added to the project's `requirements.txt`, which is created in `code/` if there is none. Nothing already in the file is changed or removed, so your own additions and version pins are kept. Listed packages that nothing imports are reported, but left in.
    - An import inside `try: ... except ImportError:` is optional, because the program copes without it. It is reported but not added.
+   - An import is covered by any package in `requirements.txt` that provides it, so a listed `opencv-python-headless` covers `cv2` and the conflicting `opencv-python` isn't added.
+   - For a package only some platforms need, give it an environment marker in `requirements.txt`, e.g. `pygrabber; sys_platform == "win32"`. On other platforms, Prepare doesn't install or check it, and pip skips it there too. Prepare can't tell when code only imports a package on some platforms, so it adds such a package without a marker: add the marker yourself.
 2. **venv**: `<project>/venv` is created, using the system packages option. An existing venv is reused, unless it was made with the other setting of that option.
 3. **Install**: `requirements.txt` is installed into the venv with the venv's own pip.
 4. **Check**: the venv imports each package the program needs. A failure means something is missing from `requirements.txt`, or the package needs something from the operating system.

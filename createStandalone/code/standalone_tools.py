@@ -839,6 +839,10 @@ PIP_NAMES = {"cv2": "opencv-python", "PIL": "Pillow", "yaml": "PyYAML", "serial"
              "dateutil": "python-dateutil", "dotenv": "python-dotenv", "usb": "pyusb", "jwt": "PyJWT",
              "Crypto": "pycryptodome", "OpenSSL": "pyOpenSSL", "zmq": "pyzmq", "gi": "PyGObject",
              "magic": "python-magic", "attr": "attrs", "RPi": "RPi.GPIO", "websocket": "websocket-client"}
+# Modules that more than one pip package provides: any of them listed in requirements.txt covers the import
+# (these packages conflict, so adding a second one would break the first)
+ALTERNATIVES = {"cv2": ["opencv-python", "opencv-python-headless", "opencv-contrib-python",
+                        "opencv-contrib-python-headless"]}
 REQ_NAME = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
@@ -920,23 +924,47 @@ def imported_modules(project, stdlib, lines):
     return order(found), order({k: v for k, v in optional.items() if k not in found})
 
 
-def update_requirements(project, packages, lines):
+def listed_requirements(text):
+    """[(package name, environment marker or "")] for each package line of a requirements.txt's text."""
+    listed = []
+    for line in text.splitlines():
+        line = line.split("#")[0]
+        m = REQ_NAME.match(line)
+        if m and not line.lstrip().startswith("-"):
+            listed.append((m.group(1), line.partition(";")[2].strip()))
+    return listed
+
+
+def marker_applies(marker):
+    """Whether a requirement's environment marker (e.g. sys_platform == "win32") holds on this computer, as
+    pip decides it. True when there is none, or it can't be evaluated."""
+    if not marker:
+        return True
+    try:
+        try:
+            from packaging.markers import Marker
+        except ImportError:
+            from pip._vendor.packaging.markers import Marker   # every venv has pip, and pip has packaging
+        return Marker(marker).evaluate()
+    except Exception:
+        return True
+
+
+def update_requirements(project, packages, lines, other_platform=()):
     """Add the pip packages not yet listed to the project's requirements.txt (code/requirements.txt is made
-    if there is none). Nothing already in it is changed or removed. Returns its path relative to the project."""
+    if there is none). Nothing already in it is changed or removed. other_platform: listed packages the code
+    imports that are for another platform (not added, but not reported as unused either).
+    Returns its path relative to the project."""
     rel = requirements_file(project) or REQUIREMENTS[0]
     path = os.path.join(project, rel)
     text = ""
     if os.path.isfile(path):
         with open(path, encoding="utf-8-sig") as f:
             text = f.read()
-    listed = []
-    for line in text.splitlines():
-        m = REQ_NAME.match(line.split("#")[0])
-        if m and not line.lstrip().startswith("-"):
-            listed.append(m.group(1))
+    listed = [name for name, _ in listed_requirements(text)]
     have = {pip_key(x) for x in listed}
     add = [p for p in packages if pip_key(p) not in have]
-    wanted = {pip_key(p) for p in packages}
+    wanted = {pip_key(p) for p in [*packages, *other_platform]}
     if not text:
         text = ("# What pip installs into the program's venv. Made by Prepare from the program's imports:\n"
                 "# edit it as needed (Prepare only ever adds packages that are missing).\n")
@@ -1001,10 +1029,27 @@ def run_prepare_job(lines, project, opts):
             raise RuntimeError(f"Could not ask {py} about its packages: {probe.stderr.strip()}")
         info = json.loads(probe.stdout)
         modules, optional = imported_modules(project, set(info["stdlib"]), lines)
-        packages = []
+        req_path = os.path.join(project, requirements_file(project)) if requirements_file(project) else ""
+        listed = {}
+        if req_path:
+            with open(req_path, encoding="utf-8-sig") as f:
+                listed = {pip_key(name): (name, marker) for name, marker in listed_requirements(f.read())}
+        packages, other_platform, other_platform_packages = [], set(), []
         for module, files in modules.items():
             dists = info["dists"].get(module) or []
-            if dists:
+            # A package already in requirements.txt that provides the module covers it, whichever one it is
+            providers = dists + ALTERNATIVES.get(module, []) + [PIP_NAMES.get(module, module)]
+            listed_as = next((listed[pip_key(p)] for p in providers if pip_key(p) in listed), None)
+            if listed_as and not marker_applies(listed_as[1]):
+                # e.g. a Windows-only package, imported only when the program runs on Windows
+                other_platform.add(module)
+                other_platform_packages.append(listed_as[0])
+                lines.append(f"  {module:<20} -> {listed_as[0]} (listed for {listed_as[1]}: not for this computer, "
+                             f"so not installed or checked here)   imported in {', '.join(files)}")
+                continue
+            if listed_as:
+                package, how = listed_as[0], ""
+            elif dists:
                 package, how = dists[0], ""
                 if len(set(map(pip_key, dists))) > 1:
                     how = f" (also provided by {', '.join(dists[1:])})"
@@ -1020,7 +1065,7 @@ def run_prepare_job(lines, project, opts):
                          f"add it to requirements.txt yourself if you want it")
 
         lines.append("=== requirements.txt ===")
-        req = update_requirements(project, packages, lines)
+        req = update_requirements(project, packages, lines, other_platform_packages)
 
         venv = os.path.join(project, "venv")
         site = opts["site_packages"] and not IS_WINDOWS   # as install.py does
@@ -1046,10 +1091,11 @@ def run_prepare_job(lines, project, opts):
             if code is not None:
                 lines.append(f"pip could not install everything in {req}: correct it and press Prepare again")
             return
-        if modules:
-            code = job.step(lines, [vpy, "-u", "-c", CHECK, *modules], os.path.join(project, CODE_DIR),
+        to_check = [m for m in modules if m not in other_platform]
+        if to_check:
+            code = job.step(lines, [vpy, "-u", "-c", CHECK, *to_check], os.path.join(project, CODE_DIR),
                             title="Check that the venv can import them",
-                            shown=f"{vpy} -c <import each of: {' '.join(modules)}>")
+                            shown=f"{vpy} -c <import each of: {' '.join(to_check)}>")
             if code is None:
                 return
             if code != 0:
