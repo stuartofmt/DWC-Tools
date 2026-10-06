@@ -4,10 +4,11 @@
 <h2>Instructions</h2>
 <p class="firstrun" id="first-run" hidden>Welcome. No settings have been saved yet. Browse starts in <code id="cur-projects">...</code>:
 change that on the <a href="/settings">Settings</a> page if your projects live somewhere else.</p>
-<p>These tools release and install standalone Python programs, on a Raspberry Pi or a Windows PC. There are two:</p>
+<p>These tools prepare and release standalone Python programs, on a Raspberry Pi or a Windows PC. There are two, normally used in this order:</p>
 <ul>
+  <li><b>Prepare</b> gets the project folder ready: it works out <code>requirements.txt</code> from the program's imports, creates the project's
+      Python venv, installs <code>requirements.txt</code> into it with pip and checks that every package can be imported.</li>
   <li><b>Make Zip</b> builds the project's release zip in its <code>dist</code> folder, ready to copy to another computer.</li>
-  <li><b>Install</b> installs the project on this computer: it copies the program into an install folder, creates its Python venv and installs the project's <code>requirements.txt</code> into the venv with pip.</li>
 </ul>
 <p>They run as separate jobs, so both can run at the same time. Nothing is installed system-wide (no apt, no sudo): every package goes into the
 program's own venv, using the venv's pip. That works on Linux versions whose system Python is "externally managed" and refuses <code>pip install</code>.</p>
@@ -18,18 +19,20 @@ __SETUP__
 By default it listens on this computer's network address (so <code>localhost</code> will not work) on the <b>preferred port</b> from the
 <a href="/settings">Settings</a> page if that port is free, or otherwise on the first free port from 17900.
 This tool is currently running at <code id="cur-url">...</code>.
-There is no login, so anyone who can reach the page can make zips and run installs: only use it on a network you trust, or set <b>Listen on</b> to
+There is no login, so anyone who can reach the page can prepare projects and make zips: only use it on a network you trust, or set <b>Listen on</b> to
 <b>This computer only</b> on the Settings page.</p>
 
 <h3>What a project looks like</h3>
-<p>A project is a folder with a <code>code</code> folder holding the program. Its name is the folder's name. Nothing else needs adding: these tools do the work,
-and the only thing they write into the project is the zip in <code>dist</code>.</p>
+<p>A project is a folder with a <code>code</code> folder holding the program. Its name is the folder's name. Nothing else needs adding: Prepare
+makes the rest.</p>
 <pre>scanCam/                   the project folder: its name is the project's name
     README.md              optional, copied with the program
     code/
         scanCam.py         the main program, which may set its version: progVersion = '1.0.0'
-        requirements.txt   what pip installs into the venv (or put it in the project folder)
+        requirements.txt   what pip installs into the venv: made by Prepare (it can also be in the project folder)
         ...                everything else in code is copied too
+    venv/                  made by Prepare (never part of the zip)
+    run.sh                 made by Prepare if there is none (Windows: run.bat): starts the program with the venv
     dist/                  made by Make Zip</pre>
 
 <h3>Choosing the project</h3>
@@ -49,7 +52,29 @@ and the only thing they write into the project is the zip in <code>dist</code>.<
   <li><b>The venv can also use Python packages already installed on the system</b> (ticked by default): the venv then sees packages that came with
       the operating system, such as picamera2 on Raspberry Pi OS, as well as its own. Untick it for a venv that holds only what <code>requirements.txt</code> lists.</li>
 </ul>
-<p>A project must have a <code>requirements.txt</code>, in <code>code</code> or in the project folder. It can be empty if the program needs no packages.</p>
+<p>Make Zip needs a <code>requirements.txt</code>, in <code>code</code> or in the project folder: press Prepare to make one.</p>
+
+<h3>Prepare</h3>
+<ol>
+  <li>Choose the project and press <b>Prepare</b>. The line above the button shows what the project has now.</li>
+  <li><b>requirements.txt.</b> Every <code>.py</code> file in <code>code</code> is read for its <code>import</code> lines. Python's own modules and the
+      project's own modules (any <code>.py</code> file or folder in <code>code</code>) are skipped. Each other import is turned into the pip package
+      that provides it, as recorded by the packages installed on this computer (for example <code>yaml</code> comes from <code>PyYAML</code>),
+      or guessed from a short list of well-known names when it is not installed here (<code>cv2</code> is <code>opencv-python</code>).
+      The packages that are missing are added to the project's <code>requirements.txt</code>, which is made in <code>code</code> if there is none.
+      Nothing already in it is changed or removed, so your own additions and version pins stay. Packages it lists that nothing imports are reported.
+      An import inside <code>try: ... except ImportError:</code> is optional, as the program copes without it: it is reported but not added.</li>
+  <li><b>venv.</b> The project's <code>venv</code> folder is created (with the system packages option above), or the existing one is used.
+      A venv made with the other setting of that option is made again.</li>
+  <li><b>Install.</b> <code>requirements.txt</code> is installed into the venv with the venv's own pip.</li>
+  <li><b>Check.</b> The venv imports each package the program needs. A failure means something is missing from <code>requirements.txt</code>,
+      or the package needs something from the operating system: the log shows the error.</li>
+  <li><b>Launcher.</b> <code>run.sh</code> (Windows: <code>run.bat</code>) is added to the project folder, unless there is one already, so the program can
+      be run from there with its venv.</li>
+</ol>
+<p>The log ends by listing what Make Zip will use. Run Prepare again whenever the program's imports change.</p>
+<p>Creating a venv needs Python's venv module. Debian and Raspberry Pi OS ship it separately as <code>python3-venv</code>: if the log says the venv
+could not be created, that package is missing and has to be installed once by the system administrator (<code>sudo apt install python3-venv</code>).</p>
 
 <h3>Make Zip</h3>
 <ol>
@@ -61,34 +86,24 @@ and the only thing they write into the project is the zip in <code>dist</code>.<
   <li><b>Zips in dist</b> lists the zips made so far, newest first. Click one to download it.</li>
 </ol>
 <p>On the other computer, unzip it and run <code>python3 install.py</code> in the unzipped folder (on Windows: <code>py install.py</code>).
-It asks for the install folder, then does exactly what Install does here.</p>
-
-<h3>Install</h3>
-<ol>
-  <li>Choose the project.</li>
-  <li>Enter the <b>Install folder</b>, such as <code>__EXAMPLE__</code>, or leave it empty for the folder shown greyed out (the project's name in your home folder).
-      Each project remembers its own install folder.</li>
-  <li>Press <b>Install</b> and confirm. The log shows the copy, the venv being created and pip installing the requirements into it.</li>
-</ol>
-<p>The install folder then holds the program and its venv, plus <code>run.sh</code> (Windows: <code>run.bat</code>), which starts the program with that venv.
-Running Install again updates the program files and recreates the venv. Install uses the same install.py that goes into the zip, run on the project folder.</p>
-<p>Creating a venv needs Python's venv module. Debian and Raspberry Pi OS ship it separately as <code>python3-venv</code>: if the log says the venv
-could not be created, that package is missing and has to be installed once by the system administrator (<code>sudo apt install python3-venv</code>).</p>
+It asks for the install folder (the project's name in the home folder if you just press Enter), copies the program there, creates its venv,
+installs <code>requirements.txt</code> into it and adds <code>run.sh</code> (Windows: <code>run.bat</code>) to start the program with that venv.
+Running it again updates the program files and recreates the venv.</p>
 
 <h3>What is remembered</h3>
-<p>The settings, the current project, the recent projects and each project's options and install folder are stored in one file, currently
+<p>The settings, the current project, the recent projects and each project's options are stored in one file, currently
 <code id="cur-file">...</code>. __HIDDEN_NOTE__ It is plain text, so you can back it up or delete it. Deleting it resets everything to the defaults.
-Installs are run with <code id="cur-python">...</code>, the Python that runs this app.</p>
+Venvs are made with <code id="cur-python">...</code>, the Python outside any venv that this app's Python comes from.</p>
 
 <h3>Stop and Exit</h3>
 <ul>
   <li><b>Stop</b> ends the running job in that tool, with everything it started (pip ...).
-      A stopped zip is deleted. Stopping Install part way can leave a half-made venv: run Install again to recreate it.</li>
+      A stopped zip is deleted. Stopping Prepare part way can leave the venv without every package: press Prepare again.</li>
   <li><b>Exit</b> stops everything and shuts the app down (so does Ctrl+C in the terminal).</li>
   <li>Closing the page does the same: once every page of the app has been closed, in every browser that had it open, the app stops any running job and shuts down
       about 10 seconds later. Going to another page of the app, or reloading, does not count. A page that stops answering
       (for example after the browser crashed) counts as closed after 90 seconds. Until a page has been opened for the first time, the app keeps waiting.
-      So keep a page open while an Install runs: closing it stops the Install.</li>
+      So keep a page open while Prepare runs: closing it stops Prepare.</li>
   <li>The Home page shows which tools are currently running.</li>
 </ul>
 
@@ -96,9 +111,10 @@ Installs are run with <code id="cur-python">...</code>, the Python that runs thi
 <table>
   <tr><th>You see</th><th>Try</th></tr>
   <tr><td>"... has no code folder with a .py program in it"</td><td>Choose the project's top folder, the one holding <code>code</code>, not <code>code</code> itself</td></tr>
-  <tr><td>"... has no requirements.txt"</td><td>Add one to <code>code</code> or the project folder, listing the packages the program imports (it can be empty)</td></tr>
-  <tr><td>"Could not create the venv"</td><td>See the note about <code>python3-venv</code> under Install above</td></tr>
-  <tr><td>The program fails to import a package once installed</td><td>Add it to <code>requirements.txt</code> and press Install again</td></tr>
+  <tr><td>"... has no requirements.txt" (Make Zip)</td><td>Press Prepare first: it makes one</td></tr>
+  <tr><td>"Could not create the venv"</td><td>See the note about <code>python3-venv</code> under Prepare above</td></tr>
+  <tr><td>"pip could not install everything"</td><td>A name in <code>requirements.txt</code> is wrong (often a guessed one) or that version does not exist: correct it and press Prepare again</td></tr>
+  <tr><td>A package FAILED in the import check</td><td>Read the error: add the missing package to <code>requirements.txt</code>, or install what the operating system needs, then press Prepare again</td></tr>
   <tr><td>"Already running"</td><td>Wait for the job to finish, or press Stop</td></tr>
   <tr><td>The address is different from last time</td><td>The preferred port was in use, so the next free port from 17900 was used. Look at the terminal for the address</td></tr>
   <tr><td>"Refused: this request came from another web page"</td><td>Open the tool from the address the app printed at start-up, not from inside another web page or a saved copy of it</td></tr>

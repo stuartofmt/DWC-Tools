@@ -1,20 +1,11 @@
-
-const API = "/install/api";
-let shownFor = null;
+const API = "/prepare/api";
 const picker = setupPicker(info => {
-  // Each project remembers its own install folder: show it when the project changes
-  const path = info ? info.path : null;
-  if(path !== shownFor){
-    shownFor = path;
-    $("target").value = info ? info.options.install_target : "";
-  }
-  $("target").placeholder = info ? info.default_target : "";
+  $("state").textContent = !info ? "" :
+    "Now: " + [info.requirements ? info.requirements : "no requirements.txt yet",
+               info.venv ? "venv made" : "no venv yet",
+               info.launcher ? info.launcher : "no launcher"].join(", ");
 });
-$("go").onclick = () => {
-  const info = picker.current(), target = $("target").value.trim();
-  if(!confirm(`Install ${info.name} into ${target || info.default_target}?`)) return;
-  post(`${API}/start`, {project: info.path, target});
-};
+$("go").onclick = () => post(`${API}/start`, {project: picker.current().path});
 $("stop").onclick = () => post(`${API}/stop`);
 wireExit();
-startPolling(API, () => !!picker.current());
+startPolling(API, () => !!picker.current(), () => picker.refresh());   // show the new state once the run ends

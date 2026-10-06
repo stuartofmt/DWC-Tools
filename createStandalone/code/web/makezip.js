@@ -19,4 +19,4 @@ const picker = setupPicker(showZips);
 $("go").onclick = () => post(`${API}/start`, {project: picker.current().path});
 $("stop").onclick = () => post(`${API}/stop`);
 wireExit();
-startPolling(API, () => !!picker.current(), () => picker.refresh());   // the new zip appears once the run ends
+startPolling(API, () => !!(picker.current() && picker.current().requirements), () => picker.refresh());   // the new zip appears once the run ends

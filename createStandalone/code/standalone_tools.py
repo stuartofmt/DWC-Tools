@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Standalone tools - one small web app that releases and installs standalone Python programs.
+"""Standalone tools - one small web app that prepares and releases standalone Python programs.
   /          Home        choose a tool
+  /prepare   Prepare     make the project's requirements.txt from its imports, create its venv and install into it
   /makezip   Make Zip    build dist/<name>-<version>.zip (or dist/<name>.zip) from the project
-  /install   Install     copy the program to an install folder, install system packages, create its venv
   /settings  Settings    the folder project browsing starts in, the preferred port and where to listen
   /readme    Instructions on use
 
@@ -10,12 +10,14 @@ A project is a folder holding a code folder with the program in it:
   <project>/README.md            (optional)
   <project>/code/<main>.py       the program; it may set its version, e.g. progVersion = '1.0.0'
   <project>/code/requirements.txt  what pip installs into the venv (or <project>/requirements.txt)
-The project's name is its folder name. Nothing needs adding to the project: this app does the work, and
-the only thing it writes into the project is the zip in dist/.
+The project's name is its folder name.
+
+Prepare works on the project folder itself: it adds any missing packages the code imports to requirements.txt
+(making code/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
+checks that the venv can import every package, and adds a run.sh / run.bat launcher if there is none.
 
 The zip unzips to a <name>/ folder holding README.md, code/ and an install.py made by this app
-(see INSTALL_TEMPLATE), so the release can be installed on a computer without this app.
-Install here runs that same install.py, from a temporary folder, so both always install the same way.
+(see INSTALL_TEMPLATE), so the release can be installed on another computer without this app.
 
 Nothing is installed system-wide (no apt, no sudo): the venv is created and requirements.txt is installed into it
 with the venv's own pip, which also works where the system Python is "externally managed".
@@ -37,6 +39,7 @@ The app stops by itself (stopping any running job) once every page of it has bee
 The settings, the recent projects and each project's options are stored together in
 .standalone_tools.json, in the same folder as this script.
 """
+import ast
 import json
 import logging
 import os
@@ -47,7 +50,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.parse
@@ -212,11 +214,12 @@ class Job:
             self.busy = True
             return self.lines
 
-    def step(self, lines, cmd, cwd, title=None):
-        """Run one command, streaming its output. Returns the exit code, or None if stopped."""
+    def step(self, lines, cmd, cwd, title=None, shown=None):
+        """Run one command, streaming its output. Returns the exit code, or None if stopped.
+        shown: what to log for the command, when it is too long to show as it is."""
         if title:
             lines.append(f"=== {title} ===")
-        lines.append("$ " + " ".join(cmd))
+        lines.append("$ " + (shown or " ".join(cmd)))
         with self.lock:
             if self.stopping:
                 return None
@@ -248,8 +251,8 @@ class Job:
 
 
 zip_job = Job()       # Make Zip
-install_job = Job()   # Install
-JOBS = (zip_job, install_job)
+prepare_job = Job()   # Prepare
+JOBS = (zip_job, prepare_job)
 
 
 def shut_down(reason):
@@ -411,10 +414,8 @@ def options_for(project, data=None):
         main = next((p for p in found if p.lower() == (name + ".py").lower()), found[0] if len(found) == 1 else "")
 
     site = saved.get("site_packages")
-    target = saved.get("install_target")
     return {"main": main,
-            "site_packages": site if isinstance(site, bool) else DEFAULT_SITE_PACKAGES,
-            "install_target": target if isinstance(target, str) else ""}
+            "site_packages": site if isinstance(site, bool) else DEFAULT_SITE_PACKAGES}
 
 
 def requirements_file(project):
@@ -447,8 +448,12 @@ def dist_zips(project):
     return sorted(out, key=lambda z: z["mtime"], reverse=True)
 
 
-def default_target(project):
-    return os.path.join(os.path.expanduser("~"), os.path.basename(project))
+def venv_python(venv):
+    return os.path.join(venv, "Scripts", "python.exe") if IS_WINDOWS else os.path.join(venv, "bin", "python")
+
+
+def launcher_name():
+    return "run.bat" if IS_WINDOWS else "run.sh"
 
 
 def project_view(path, data=None):
@@ -460,12 +465,15 @@ def project_view(path, data=None):
         view.update(programs=found, options=opts, version=program_version(path, opts["main"]),
                     has_readme=os.path.isfile(os.path.join(path, README)),
                     requirements=requirements_file(path),
-                    zips=dist_zips(path), default_target=default_target(path))
+                    venv=os.path.isfile(venv_python(os.path.join(path, "venv"))),
+                    launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "",
+                    zips=dist_zips(path))
     return view
 
 
-def check_project(raw):
-    """(path, options, None) for a project with its main program chosen, else (None, None, error message)."""
+def check_project(raw, need_requirements=True):
+    """(path, options, None) for a project with its main program chosen (and a requirements.txt, unless
+    need_requirements is False), else (None, None, error message)."""
     path = full_path(raw)
     if path is None:
         return None, None, "Choose a project: enter or browse to the full path of its folder"
@@ -473,8 +481,8 @@ def check_project(raw):
         return None, None, f"'{path}' is not an existing folder"
     if not is_project(path):
         return None, None, f"'{path}' has no {CODE_DIR} folder with a .py program in it"
-    if not requirements_file(path):
-        return None, None, f"'{path}' has no requirements.txt (in {CODE_DIR} or the project folder): it lists what pip installs into the venv"
+    if need_requirements and not requirements_file(path):
+        return None, None, f"'{path}' has no requirements.txt (in {CODE_DIR} or the project folder): press Prepare to make one"
     opts = options_for(path)
     if not opts["main"]:
         return None, None, "Choose the main program in the project options"
@@ -483,8 +491,8 @@ def check_project(raw):
 
 # ---------- the install.py that goes into each release ----------
 # Filled in by make_install_py(). Its job is that of the original scanCam install.py, with the project's
-# name, main program and packages filled in. It also takes the install folder and the folder holding the
-# program as arguments, which is how this app's Install runs it (from a temporary folder, on the project).
+# name, main program and packages filled in. It goes into each release, to install it on another computer.
+# The install folder can be given as an argument, and --source names the folder holding the program.
 INSTALL_TEMPLATE = r'''#!/usr/bin/env python3
 """
 One-time setup for __NAME__: asks for an install directory, copies the
@@ -663,25 +671,278 @@ def run_zip_job(lines, project, opts):
         job.busy = False
 
 
-# ---------- Install: the job ----------
-def run_install_job(lines, project, opts, target):
-    job = install_job
-    code = None
+# ---------- Prepare: the job ----------
+# Run with the Python outside any venv (see base_python): what Python's standard library holds, and which pip
+# package provides each importable top-level name on this computer
+PROBE = r"""
+import json, os, sys, sysconfig
+try:
+    std = set(sys.stdlib_module_names)
+except AttributeError:   # Python before 3.10
+    std = set(sys.builtin_module_names)
+    lib = sysconfig.get_paths()["stdlib"]
+    std.update(n[:-3] if n.endswith(".py") else n for n in os.listdir(lib))
+try:
+    from importlib.metadata import packages_distributions
+    dists = packages_distributions()
+except ImportError:
+    dists = {}
+print(json.dumps({"stdlib": sorted(std), "dists": dists}))
+"""
+# Run in the project's venv with the module names as arguments: imports each one
+CHECK = r"""
+import importlib, sys
+bad = 0
+for name in sys.argv[1:]:
+    try:
+        importlib.import_module(name)
+        print("  ok      " + name)
+    except BaseException as e:
+        bad += 1
+        print("  FAILED  %s: %s: %s" % (name, type(e).__name__, e))
+sys.exit(1 if bad else 0)
+"""
+# pip package names that differ from the import name, for packages not installed on this computer
+# (for installed ones, their own metadata says which package they came from)
+PIP_NAMES = {"cv2": "opencv-python", "PIL": "Pillow", "yaml": "PyYAML", "serial": "pyserial",
+             "sklearn": "scikit-learn", "skimage": "scikit-image", "bs4": "beautifulsoup4",
+             "dateutil": "python-dateutil", "dotenv": "python-dotenv", "usb": "pyusb", "jwt": "PyJWT",
+             "Crypto": "pycryptodome", "OpenSSL": "pyOpenSSL", "zmq": "pyzmq", "gi": "PyGObject",
+             "magic": "python-magic", "attr": "attrs", "RPi": "RPi.GPIO", "websocket": "websocket-client"}
+REQ_NAME = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def base_python():
+    """The Python this app's Python was made from, outside any venv: it sees the packages installed on the
+    system, and new venvs are made with it (as install.py does)."""
+    exe = os.path.join(sys.base_prefix, "python.exe") if IS_WINDOWS else os.path.join(sys.base_prefix, "bin", "python3")
+    return exe if os.path.isfile(exe) else sys.executable
+
+
+def pip_key(name):
+    """A pip package name in the form pip compares them (Flask, flask and FLASK are the same package)."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def code_tree(project):
+    """(dirpath, dirnames, filenames) for the project's code folder, leaving out venv, __pycache__ and hidden folders."""
+    for dirpath, dirnames, filenames in os.walk(os.path.join(project, CODE_DIR)):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
+        yield dirpath, dirnames, sorted(filenames)
+
+
+IMPORT_ERRORS = {"ImportError", "ModuleNotFoundError", "Exception", "BaseException"}
+
+
+def optional_imports(tree):
+    """The import statements inside a try whose except catches ImportError (or a bare except): the program
+    copes without those modules."""
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        caught = set()
+        for h in node.handlers:
+            types = h.type.elts if isinstance(h.type, ast.Tuple) else [h.type]
+            caught.update("BaseException" if t is None else getattr(t, "id", getattr(t, "attr", "")) for t in types)
+        if caught & IMPORT_ERRORS:
+            for stmt in node.body:
+                out.update(id(n) for n in ast.walk(stmt) if isinstance(n, (ast.Import, ast.ImportFrom)))
+    return out
+
+
+def imported_modules(project, stdlib, lines):
+    """({top-level module name: [files importing it]}, {the same for optional imports}) for the modules the code
+    imports that are neither in Python's standard library nor part of the project (any .py file or folder in the
+    code folder). An import is optional when try/except ImportError guards it everywhere it appears."""
+    local, files = set(), []
+    for dirpath, dirnames, filenames in code_tree(project):
+        local.update(dirnames)
+        for n in filenames:
+            if n.endswith(".py"):
+                local.add(n[:-3])
+                files.append(os.path.join(dirpath, n))
+    found, optional = {}, {}
+    for path in files:
+        rel = os.path.relpath(path, project).replace(os.sep, "/")
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                tree = ast.parse(f.read(), rel)
+        except (SyntaxError, ValueError, OSError) as e:
+            lines.append(f"Could not read {rel}, so its imports are not counted: {e}")
+            continue
+        guarded = optional_imports(tree)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module]   # from x import y (relative imports are always the project's own)
+            else:
+                continue
+            for name in names:
+                top = name.split(".")[0]
+                if top not in stdlib and top not in local and top != "__future__":
+                    where = optional if id(node) in guarded else found
+                    where.setdefault(top, [])
+                    if rel not in where[top]:
+                        where[top].append(rel)
+    order = lambda d: dict(sorted(d.items(), key=lambda kv: kv[0].lower()))
+    return order(found), order({k: v for k, v in optional.items() if k not in found})
+
+
+def update_requirements(project, packages, lines):
+    """Add the pip packages not yet listed to the project's requirements.txt (code/requirements.txt is made
+    if there is none). Nothing already in it is changed or removed. Returns its path relative to the project."""
+    rel = requirements_file(project) or REQUIREMENTS[0]
+    path = os.path.join(project, rel)
+    text = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8-sig") as f:
+            text = f.read()
+    listed = []
+    for line in text.splitlines():
+        m = REQ_NAME.match(line.split("#")[0])
+        if m and not line.lstrip().startswith("-"):
+            listed.append(m.group(1))
+    have = {pip_key(x) for x in listed}
+    add = [p for p in packages if pip_key(p) not in have]
+    wanted = {pip_key(p) for p in packages}
+    if not text:
+        text = ("# What pip installs into the program's venv. Made by Prepare from the program's imports:\n"
+                "# edit it as needed (Prepare only ever adds packages that are missing).\n")
+    if add or not os.path.isfile(path):
+        if not text.endswith("\n"):
+            text += "\n"
+        text += "".join(p + "\n" for p in add)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    lines.append(f"{rel}: " + ("added " + ", ".join(add) if add else "nothing to add")
+                 + (" (new file)" if not listed and add else ""))
+    unused = [x for x in listed if pip_key(x) not in wanted]
+    if unused:
+        lines.append("Listed but not imported by the code (left in, as the program may still need them): " + ", ".join(unused))
+    return rel
+
+
+def venv_uses_system(venv):
+    """Whether an existing venv can see the system's packages (from its pyvenv.cfg); None if unknown."""
+    try:
+        with open(os.path.join(venv, "pyvenv.cfg"), encoding="utf-8") as f:
+            for line in f:
+                key, _, value = line.partition("=")
+                if key.strip() == "include-system-site-packages":
+                    return value.strip().lower() == "true"
+    except OSError:
+        pass
+    return None
+
+
+def write_launcher(project, opts, lines):
+    """Add run.sh (Windows: run.bat) to the project, to start the program with its venv, unless there is one."""
+    name = launcher_name()
+    path = os.path.join(project, name)
+    if os.path.exists(path):
+        lines.append(f"{name}: already there, left as it is")
+        return
+    main = opts["main"]
+    if IS_WINDOWS:
+        text = ("@echo off\r\nrem Start the program with its venv (made by Prepare in standalone_tools).\r\n"
+                f'cd /d "%~dp0"\r\nvenv\\Scripts\\python.exe -u {CODE_DIR}\\{main} %*\r\n')
+    else:
+        text = ("#!/bin/bash\n# Start the program with its venv (made by Prepare in standalone_tools).\n"
+                f'cd "$(dirname "$0")"\nexec venv/bin/python -u {CODE_DIR}/{main} "$@"\n')
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+    os.chmod(path, 0o755)
+    lines.append(f"{name}: made, to start {CODE_DIR}/{main} with the venv")
+
+
+def run_prepare_job(lines, project, opts):
+    """requirements.txt from the imports -> venv -> pip install -> import check -> launcher."""
+    job = prepare_job
+    ok = False
     name = os.path.basename(project)
     try:
-        with tempfile.TemporaryDirectory(prefix="standalone-") as tmp:
-            script = os.path.join(tmp, "install.py")
-            with open(script, "w", encoding="utf-8") as f:
-                f.write(make_install_py(name, opts, requirements_file(project)))
-            code = job.step(lines, [sys.executable, "-u", script, "--source", project, target], project,
-                            title=f"Install {name} into {target}")
+        lines.append(f"=== Find the packages {name} imports ===")
+        py = base_python()
+        probe = subprocess.run([py, "-c", PROBE], capture_output=True, text=True, timeout=120,
+                               stdin=subprocess.DEVNULL)
+        if probe.returncode != 0:
+            raise RuntimeError(f"Could not ask {py} about its packages: {probe.stderr.strip()}")
+        info = json.loads(probe.stdout)
+        modules, optional = imported_modules(project, set(info["stdlib"]), lines)
+        packages = []
+        for module, files in modules.items():
+            dists = info["dists"].get(module) or []
+            if dists:
+                package, how = dists[0], ""
+                if len(set(map(pip_key, dists))) > 1:
+                    how = f" (also provided by {', '.join(dists[1:])})"
+            else:
+                package, how = PIP_NAMES.get(module, module), " (not installed on this computer: pip name guessed)"
+            if pip_key(package) not in map(pip_key, packages):
+                packages.append(package)
+            lines.append(f"  {module:<20} -> {package}{how}   imported in {', '.join(files)}")
+        if not modules:
+            lines.append("  Only Python's standard library and the project's own modules are imported")
+        for module, files in optional.items():
+            lines.append(f"  {module:<20} optional (try/except ImportError) in {', '.join(files)}: not added, "
+                         f"add it to requirements.txt yourself if you want it")
+
+        lines.append("=== requirements.txt ===")
+        req = update_requirements(project, packages, lines)
+
+        venv = os.path.join(project, "venv")
+        site = opts["site_packages"] and not IS_WINDOWS   # as install.py does
+        in_use = os.path.realpath(sys.prefix) == os.path.realpath(venv)   # this app is running from it
+        if os.path.isdir(venv) and venv_uses_system(venv) != site and not in_use:
+            lines.append(f"Removing {venv}: it was made with a different 'system packages' option")
+            shutil.rmtree(venv)
+        if os.path.isfile(venv_python(venv)):
+            lines.append(f"=== Using the existing venv in {venv} ===")
+        else:
+            code = job.step(lines, [py, "-m", "venv", *(["--system-site-packages"] if site else []), venv],
+                            project, title="Create the venv")
+            if code != 0:
+                if code is not None:
+                    lines.append("Could not create the venv. On Debian or Raspberry Pi OS the venv module needs the "
+                                 "python3-venv package: sudo apt install python3-venv")
+                    shutil.rmtree(venv, ignore_errors=True)   # a half-made venv would be taken as ready next time
+                return
+        vpy = venv_python(venv)
+        code = job.step(lines, [vpy, "-m", "pip", "install", "-r", os.path.join(project, req)], project,
+                        title=f"Install {req} into the venv")
+        if code != 0:
+            if code is not None:
+                lines.append(f"pip could not install everything in {req}: correct it and press Prepare again")
+            return
+        if modules:
+            code = job.step(lines, [vpy, "-u", "-c", CHECK, *modules], os.path.join(project, CODE_DIR),
+                            title="Check that the venv can import them",
+                            shown=f"{vpy} -c <import each of: {' '.join(modules)}>")
+            if code is None:
+                return
+            if code != 0:
+                lines.append("Some packages could not be imported: fix requirements.txt (or install what the error "
+                             "asks for) and press Prepare again")
+        lines.append("=== Launcher ===")
+        write_launcher(project, opts, lines)
+
+        version = program_version(project, opts["main"])
+        lines.append("")
+        lines.append("Ready for Make Zip:" if code == 0 else "Make Zip would use:")
+        lines.append(f"  main program  {CODE_DIR}/{opts['main']}" + (f", version {version}" if version else ", no version set"))
+        lines.append(f"  requirements  {req}")
+        lines.append("  README.md     " + ("yes" if os.path.isfile(os.path.join(project, README)) else
+                                         "none (optional: it goes into the zip with the program)"))
+        ok = code == 0
     except Exception as e:
         lines.append(f"Error: {e}")
     finally:
         if job.stopping:
             lines.append("--- stopped ---")
         else:
-            lines.append("--- finished OK ---" if code == 0 else f"--- FAILED (exit code {code}) ---")
+            lines.append("--- finished OK ---" if ok else "--- FAILED ---")
         job.busy = False
 
 
@@ -713,12 +974,12 @@ def add_job_routes(prefix, name, job):
 
 
 add_job_routes("/makezip", "zip", zip_job)
-add_job_routes("/install", "install", install_job)
+add_job_routes("/prepare", "prepare", prepare_job)
 
 
 @app.get("/api/status")
 def api_status():
-    return jsonify(makezip=zip_job.busy, install=install_job.busy)
+    return jsonify(makezip=zip_job.busy, prepare=prepare_job.busy)
 
 
 @app.post("/api/exit")
@@ -842,7 +1103,7 @@ def config_view():
         "preferred_port": preferred_port(data),
         "listen": listen(data),
         "url": f"http://{HOST}:{PORT}/" if PORT else "",   # where this tool is listening right now
-        "python": sys.executable,
+        "python": base_python(),   # the Python venvs are made with
         "settings_file": SETTINGS_FILE,
         "first_run": not os.path.isfile(SETTINGS_FILE),
     }
@@ -921,30 +1182,19 @@ def zip_download():
     return send_from_directory(os.path.join(project, "dist"), name, as_attachment=True)
 
 
-# ---------- routes: Install ----------
-@app.post("/install/api/start")
-def install_start():
-    d = request.get_json(silent=True) or {}
-    project, opts, err = check_project(d.get("project", ""))
+# ---------- routes: Prepare ----------
+@app.post("/prepare/api/start")
+def prepare_start():
+    project, opts, err = check_project((request.get_json(silent=True) or {}).get("project", ""), need_requirements=False)
     if err:
         return jsonify(error=err), 400
-    raw = d.get("target", "")
-    if not isinstance(raw, str):
-        return jsonify(error="Install folder: invalid value"), 400
-    target = default_target(project)
-    if raw.strip():   # empty: ~/<project name>
-        target = full_path(raw)
-        if target is None:
-            return jsonify(error="Install folder: enter a full path, or leave it empty"), 400
-    if os.path.exists(target) and not os.path.isdir(target):
-        return jsonify(error=f"Install folder: '{target}' is a file"), 400
-    lines = install_job.begin()
+    lines = prepare_job.begin()
     if lines is None:
         return jsonify(error="Already running - stop it first"), 409
-    err = remember_project(project, install_target=target if raw.strip() else "")
+    err = remember_project(project)
     if err:
-        lines.append(f"Could not remember these selections: {err}")
-    threading.Thread(target=run_install_job, args=(lines, project, opts, target), daemon=True).start()
+        lines.append(f"Could not remember this selection: {err}")
+    threading.Thread(target=run_prepare_job, args=(lines, project, opts), daemon=True).start()
     return jsonify(ok=True)
 
 
@@ -968,7 +1218,7 @@ def render(title, page):
 
 HOME_PAGE = render("Standalone tools", "home")
 ZIP_PAGE = render("Make Zip", "makezip")
-INSTALL_PAGE = render("Install", "install")
+PREPARE_PAGE = render("Prepare", "prepare")
 SETTINGS_PAGE = render("Standalone tools - Settings", "settings")
 _README_TEMPLATE = render("Standalone tools - Instructions", "readme")
 
@@ -983,7 +1233,6 @@ def build_readme(is_windows):
                 '<pre>pip install flask</pre><p>Then start the app:</p><pre>python standalone_tools.py</pre>'
                 '<p>Windows may ask whether to allow Python through the firewall. Allow it on private networks, '
                 'or other computers will not be able to open the page.</p>'),
-            "__EXAMPLE__": r"C:\Users\me\scanCam",
             "__HIDDEN_NOTE__": "The name starts with a dot, but Windows does not hide it: it shows in File Explorer like any other file.",
         }
     else:
@@ -992,7 +1241,6 @@ def build_readme(is_windows):
                 '<p><b>Linux</b> (for example Raspberry Pi OS / Debian Trixie): install Flask:</p>'
                 '<pre>sudo apt install python3-flask</pre>'
                 '<p>Then start the app from a terminal:</p><pre>python3 standalone_tools.py</pre>'),
-            "__EXAMPLE__": "/home/pi/scanCam",
             "__HIDDEN_NOTE__": "The name starts with a dot, so it is hidden: use <code>ls -a</code> in that folder to see it.",
         }
     page = _README_TEMPLATE
@@ -1019,9 +1267,9 @@ def makezip_page():
     return ZIP_PAGE
 
 
-@app.get("/install")
-def install_page():
-    return INSTALL_PAGE
+@app.get("/prepare")
+def prepare_page():
+    return PREPARE_PAGE
 
 
 @app.get("/settings")
@@ -1052,7 +1300,7 @@ def main():
     logger.info(f"Running on {PLATFORM}" + (" (Windows code paths)" if IS_WINDOWS else ""))
     if PLATFORM not in ("Linux", "Windows"):
         logger.warning(f"{PLATFORM} has not been tested: it is being treated like Linux")
-    logger.info(f"Installs run with {sys.executable}")
+    logger.info(f"Venvs are made with {base_python()}")
     logger.info(f"Settings file: {SETTINGS_FILE} ({'found' if os.path.isfile(SETTINGS_FILE) else 'not found'})")
     check_settings_writable()
     data = load_store()

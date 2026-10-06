@@ -72,6 +72,7 @@ function setupPicker(onChange){
       <label class="block"><input type="checkbox" id="o-site"> The venv can also use Python packages already installed on the system (--system-site-packages)</label>
       <div class="note" id="o-note"></div>
       <div class="note">Saved as soon as you change them, and used by both tools. Packages are installed into the venv with pip, from the project's requirements.txt.
+        A change to the system packages option takes effect at the next Prepare, which then makes a new venv.
         <a id="o-view" target="_blank">See the install.py these make</a> (it goes into the zip).</div>
     </details>`;
   let info = null, seq = 0, cwd = "", parent = "";
@@ -92,15 +93,15 @@ function setupPicker(onChange){
       $("o-site").checked = o.site_packages;
       $("o-view").href = "/api/project/installpy?path=" + encodeURIComponent(j.path);
       $("o-ver").textContent = !o.main ? "" : j.version ? "version " + j.version : "no version set";
-      if(!j.requirements){
-        note.className = "note bad"; note.textContent = `Project "${j.name}" has no requirements.txt (in code or the project folder): add one listing what pip installs into the venv`;
-      }else if(!o.main){
+      if(!o.main){
         $("opts").open = true;
         note.className = "note bad"; note.textContent = `Project "${j.name}": choose its main program in the options below`;
       }else{
         info = j;
         note.className = "note good";
-        note.textContent = `Project "${j.name}" - runs code/${o.main}, pip installs ${j.requirements}` + (j.has_readme ? "" : " (no README.md)");
+        note.textContent = `Project "${j.name}" - runs code/${o.main}, ` +
+          (j.requirements ? `pip installs ${j.requirements}` : "no requirements.txt yet (Prepare makes one)") +
+          (j.has_readme ? "" : " (no README.md)");
       }
     }
     onChange(info);

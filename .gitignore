@@ -1,0 +1,31 @@
+# Python virtual environments (made by run.sh, Prepare or install.py)
+venv/
+.venv/
+env/
+
+# Python caches and build leftovers
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# Per-computer settings written by the tools (folders, ports, recent projects)
+.plugin_build_exclusions.json
+.standalone_tools.json
+
+# Node (DWC versions or plugins checked out here)
+node_modules/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -11,7 +11,7 @@ async function status(){
   try{
     const s = await (await fetch("/api/status")).json();
     $("s-makezip").textContent = s.makezip ? "● running" : "";
-    $("s-install").textContent = s.install ? "● running" : "";
+    $("s-prepare").textContent = s.prepare ? "● running" : "";
   }catch(e){}
   setTimeout(status, 2000);
 }
