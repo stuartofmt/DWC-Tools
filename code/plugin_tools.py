@@ -8,10 +8,11 @@
 
 The two tools have separate jobs, so a DWC dev server can keep running while you build plugins.
 
-Setup (Linux, e.g. Raspberry Pi OS):  sudo apt install python3-flask git nodejs npm
-Setup (Windows 10 or later):          install Python 3.8+, Git for Windows and Node.js, then: pip install flask
-         (or: pip install -r requirements.txt)
-Run:     python3 plugin_tools.py       (Windows: python plugin_tools.py)
+Setup (Linux, e.g. Raspberry Pi OS):  sudo apt install python3-venv git nodejs npm
+Setup (Windows 10 or later):          install Python 3.8+, Git for Windows and Node.js
+Install: unzip the release and run python3 install.py (Windows: py install.py). It copies the app to an install folder,
+         creates its venv with Flask in it and adds run.sh / run.bat, then starts the app (unless --no-run is given).
+Run:     run.sh (Windows: run.bat) in the install folder; from a copy of the repository, ./run.sh (makes the venv first)
 The operating system (Linux or Windows) is detected at start-up; no zip program is needed on either.
 Keep the web folder (the pages' HTML, CSS and JS) next to this script.
 Open:    the address printed at start-up: this computer's network address (or 127.0.0.1 when Settings says
@@ -1184,9 +1185,13 @@ def build_readme(is_windows):
         text = {
             "__SETUP__": (
                 '<p><b>Windows</b> (10 or later). Install Python 3.8 or later (from python.org, tick "Add python.exe to PATH"), '
-                '<b>Git for Windows</b> (git-scm.com) and <b>Node.js</b> (nodejs.org, which includes npm). '
-                'Then open Command Prompt or PowerShell and install Flask:</p>'
-                '<pre>pip install flask</pre><p>Then start the app:</p><pre>python plugin_tools.py</pre>'
+                '<b>Git for Windows</b> (git-scm.com) and <b>Node.js</b> (nodejs.org, which includes npm).</p>'
+                '<p>Then unzip the release (<code>plugin_tool.zip</code>) and, in the unzipped <code>plugin_tool</code> folder, run:</p>'
+                '<pre>py install.py</pre>'
+                '<p>It asks for the install folder (in a folder window on a desktop, otherwise in the terminal), copies the app there, creates its own venv and installs Flask into it '
+                '(internet access is needed), and adds <code>run.bat</code>. <b>When the install succeeds it starts the app straight away</b> '
+                '(add <code>--no-run</code> to install without starting it). After that, start it with <code>run.bat</code> in the install folder. '
+                'Running <code>install.py</code> again updates the app and keeps your settings.</p>'
                 '<p>No zip program is needed: the app makes zip files itself. Windows may ask whether to allow Python through '
                 'the firewall. Allow it on private networks, or other computers will not be able to open the page.</p>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, but Windows does not hide it: it shows in File Explorer like any other file.",
@@ -1202,8 +1207,14 @@ def build_readme(is_windows):
         text = {
             "__SETUP__": (
                 '<p><b>Linux</b> (for example Raspberry Pi OS / Debian Trixie): install what the tools use:</p>'
-                '<pre>sudo apt install python3-flask git nodejs npm</pre>'
-                '<p>Then start the app from a terminal:</p><pre>python3 plugin_tools.py</pre>'
+                '<pre>sudo apt install python3-venv git nodejs npm</pre>'
+                '<p>Then unzip the release (<code>plugin_tool.zip</code>) and, in the unzipped <code>plugin_tool</code> folder, run:</p>'
+                '<pre>python3 install.py</pre>'
+                '<p>It asks for the install folder (in a folder window on a desktop, otherwise in the terminal), copies the app there, creates its own venv and installs Flask into it '
+                '(internet access is needed), and adds <code>run.sh</code>. <b>When the install succeeds it starts the app straight away</b> '
+                '(add <code>--no-run</code> to install without starting it). After that, start it with <code>run.sh</code> in the install folder. '
+                'Running <code>install.py</code> again updates the app and keeps your settings.</p>'
+                '<p>From a copy of the repository, start it with <code>./run.sh</code> instead: that makes the venv the first time.</p>'
                 '<p>No zip program is needed: the app makes zip files itself.</p>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, so it is hidden: use <code>ls -a</code> in that folder to see it.",
             "__NOT_FOUND_ROW__": '<tr><td>"Could not start git / npm / node"</td><td>Install it: '

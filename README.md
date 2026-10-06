@@ -9,25 +9,50 @@ It has two tools:
 
 Each tool runs as a separate job, so a DWC dev server can keep running while you build plugins.
 
-## Setup and starting
+## Installing
 
-**Linux** (for example Raspberry Pi OS):
+### What the computer needs
+
+- **Linux** (for example Raspberry Pi OS): `sudo apt install python3-venv git nodejs npm`
+- **Windows** (10 or later): Python 3.8 or later (from python.org, tick "Add python.exe to PATH"), Git for Windows and Node.js (which includes npm). Allow Python through the firewall on private networks, so that other computers can open the page.
+
+No zip program is needed, because the app makes zip files itself. Flask is installed into the app's own venv, so you don't need to install it yourself. Nothing is installed system-wide, and no `sudo` is needed beyond the line above.
+
+### From a release zip (plugin_tool.zip)
+
+Unzip it, then run `install.py` in the unzipped `plugin_tool` folder:
 
 ```
-sudo apt install python3-venv git nodejs npm
-./run.sh
+python3 install.py                       (Windows: py install.py)
+python3 install.py /home/pi/plugin_tool  (give the install folder straight away)
+python3 install.py --no-run              (install without starting the app)
+python3 install.py --no-gui              (ask for the install folder in the terminal, not in a window)
 ```
 
-`run.sh` runs the app with its own venv in this folder. If there is no venv yet, `run.sh` creates it (this needs `python3-venv`) and installs `code/requirements.txt` (Flask) into it with the venv's pip. The first start therefore needs internet access. After that, the requirements are installed again only when a `requirements.txt` has changed. Delete the `venv` folder to have it rebuilt from scratch.
+`install.py` does the following:
 
-**Windows** (10 or later): install Python 3.8 or later (tick "Add python.exe to PATH"), Git for Windows and Node.js (which includes npm), then:
+1. It asks for the install folder if you didn't give one. On a desktop, a folder window opens. Go to where you want to install and press OK, and a `plugin_tool` folder is made there; pick an existing `plugin_tool` folder to install over it. To name the folder yourself, type its full path in the **Selection** box, such as `/home/pi/tools/dwc-plugin-tool`: a folder that doesn't exist yet is created and used as typed. Then confirm the final path. This needs Python's tkinter, which Windows has; on Raspberry Pi OS or Debian it's `python3-tk`. Over SSH, without a screen or tkinter, or with `--no-gui`, it asks in the terminal instead, where the default is `plugin_tool` in your home folder.
+2. It copies the app into that folder.
+3. It creates the app's own `venv` there and installs `requirements.txt` (Flask) into it with the venv's pip. This needs internet access.
+4. It adds `run.sh` (Windows: `run.bat`), which starts the app with that venv.
+
+**When the install succeeds, `install.py` starts the app straight away**, unless you added `--no-run`. Stop it with Exit on the page, by closing all its tabs, or with Ctrl+C. After that, start it with `run.sh` (Windows: `run.bat`) in the install folder.
+
+Running `install.py` again updates the app's files and recreates the venv. Your settings, in `code/.plugin_build_exclusions.json` in the install folder, are kept as long as the release doesn't contain that file. When making a release with createStandalone, tick it in Make Zip's Exclude files list.
+
+### From a copy of the repository
+
+Run `./run.sh` in the `plugin_tool` folder. If there is no venv yet, `run.sh` creates one there and installs `code/requirements.txt` into it, so the first start needs internet access. After that, it reinstalls only when a `requirements.txt` has changed. Delete the `venv` folder to have it rebuilt from scratch.
+
+On Windows, create the venv yourself and start the app with it:
 
 ```
-pip install flask             (or: pip install -r code\requirements.txt)
-python code\plugin_tools.py
+py -m venv venv
+venv\Scripts\python -m pip install -r code\requirements.txt
+venv\Scripts\python code\plugin_tools.py
 ```
 
-No zip program is needed on either system, because the app makes zip files itself. On Windows, allow Python through the firewall on private networks so that other computers can open the page.
+## Starting
 
 The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17800. (createStandalone uses ports from 17900, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
 
