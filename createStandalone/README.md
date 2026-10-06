@@ -14,17 +14,20 @@ Nothing is installed system-wide: there is no `apt` and no `sudo`. Every package
 **Linux** (for example Raspberry Pi OS):
 
 ```
-sudo apt install python3-flask
-./run.sh                      # or: python3 code/standalone_tools.py
+sudo apt install python3-venv
+python3 -m venv venv                                     # once: the app's own venv
+venv/bin/python -m pip install -r code/requirements.txt  # once: Flask, into the venv
+./run.sh
 ```
 
-`run.sh` uses `venv/bin/python` when this folder has a venv, and the system `python3` otherwise.
+`run.sh` starts the app with the `venv` in this folder (it is the launcher Prepare makes), so the venv must exist first. Once the app is running, Prepare can also look after the venv: run it on this folder.
 
 **Windows** (10 or later): install Python 3.8 or later, then:
 
 ```
-pip install flask             (or: pip install -r code/requirements.txt)
-python code\standalone_tools.py
+py -m venv venv
+venv\Scripts\python -m pip install -r code\requirements.txt
+venv\Scripts\python code\standalone_tools.py
 ```
 
 The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17900. (plugin_tool uses ports from 17800, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
