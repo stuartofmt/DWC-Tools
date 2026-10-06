@@ -1,0 +1,14 @@
+
+<div class="nav"><a href="/">&larr; Home</a> &middot; <a href="/makezip">Make Zip</a> &middot; <a href="/readme">Instructions</a></div>
+<h2>Install</h2>
+<div class="field" id="picker"></div>
+<div class="field">
+  <label for="target"><b>Install folder</b></label>
+  <input id="target" autocomplete="off">
+  <div class="note">Where the program is copied to and its venv created. Leave empty for the folder shown greyed out.
+  Running Install again updates the program files and recreates the venv.</div>
+</div>
+<button id="go">Install</button> <button id="stop">Stop</button>
+<button id="exit">Exit</button> <button onclick="location.href='/settings'">Settings</button>
+<span id="status"></span>
+<div id="log"></div>

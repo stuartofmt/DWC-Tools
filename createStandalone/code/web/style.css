@@ -1,0 +1,47 @@
+ body{font-family:system-ui,sans-serif;margin:1rem;max-width:60rem}
+ input,select{padding:.5rem;font-size:1rem;margin:0 .5rem .5rem 0}
+ button{padding:.5rem 1rem;font-size:1rem;cursor:pointer}
+ .nav{margin-bottom:.5rem}
+ #status{margin-left:.5rem;font-weight:600}
+ #log{background:#111;color:#ddd;padding:.75rem;height:55vh;overflow:auto;white-space:pre-wrap;
+      font:13px/1.4 ui-monospace,monospace;border-radius:6px;margin-top:1rem}
+ .cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
+ .card{flex:1 1 16rem;border:1px solid #888;border-radius:10px;padding:1rem 1.25rem;text-decoration:none;color:inherit}
+ .card:hover{border-color:#2d7ff9}
+ .card b{display:block;font-size:1.25rem;margin-bottom:.25rem}
+ .card span{display:block;opacity:.8}
+ .card em{display:block;font-style:normal;font-weight:600;min-height:1.2em;margin-top:.5rem}
+ .field{margin:1rem 0}
+ .field input{width:100%;box-sizing:border-box}
+ .field input#pp{width:8rem}
+ .row{display:flex;gap:.5rem;align-items:center}
+ .row input{flex:1;margin:0;min-width:0}
+ .note{font-size:.9rem;opacity:.8;min-height:1.2em;margin-top:.25rem}
+ .bad{color:#c0392b;opacity:1}
+ .good{color:#1e8449;opacity:1}
+ #msg{font-weight:600}
+ .browser{border:1px solid #888;border-radius:6px;padding:.5rem;margin-top:.5rem}
+ .browser .where{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.4rem}
+ .browser .where code{flex:1;word-break:break-all}
+ .browser button{padding:.25rem .7rem;font-size:.9rem}
+ .dirs{max-height:16rem;overflow:auto}
+ .dir{display:flex;align-items:center;gap:.5rem;padding:.2rem .3rem;border-radius:4px}
+ .dir:hover{background:rgba(127,127,127,.15)}
+ .dir a{flex:1;cursor:pointer;text-decoration:none;color:inherit;font:14px ui-monospace,monospace;word-break:break-all}
+ .dir.project a{font-weight:700}
+ .tag{font-size:.75rem;border:1px solid #2d7ff9;border-radius:4px;padding:0 .3rem;color:#2d7ff9}
+ .zips{margin:.5rem 0;font-size:.95rem}
+ .zips td{padding:.1rem .8rem .1rem 0}
+ .zips td.n{text-align:right;font-variant-numeric:tabular-nums}
+ .firstrun{border:1px solid #2d7ff9;border-radius:8px;padding:.6rem .9rem}
+ .doc h3{margin:1.75rem 0 .5rem}
+ .doc p,.doc li{line-height:1.5}
+ .doc pre{background:#111;color:#ddd;padding:.75rem;border-radius:6px;overflow:auto;font:13px/1.4 ui-monospace,monospace}
+ .doc code{font-family:ui-monospace,monospace;font-size:.95em}
+ .doc table{border-collapse:collapse;margin:.5rem 0}
+ .doc td,.doc th{border:1px solid #888;padding:.35rem .7rem;text-align:left;vertical-align:top}
+ .opts{border:1px solid #888;border-radius:6px;padding:.5rem .75rem;margin-top:.5rem}
+ .opts summary{font-weight:600}
+ .opts label.block{display:block;margin-top:.5rem}
+ .opts label.block input:not([type=checkbox]){width:100%;box-sizing:border-box;margin-top:.25rem}
+ .field input[type=checkbox]{width:auto;margin:0 .4rem 0 0}

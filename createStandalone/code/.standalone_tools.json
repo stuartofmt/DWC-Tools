@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "config": {
+    "projects_dir": "/home/stuart/DWC"
+  },
+  "project": "/home/stuart/DWC/Tools/createStandalone",
+  "recent": [
+    "/home/stuart/DWC/Tools/createStandalone",
+    "/home/stuart/DWC/Tools/plugin_tool"
+  ],
+  "projects": {
+    "/home/stuart/DWC/Tools/plugin_tool": {
+      "install_target": "/home/stuart/Downloads/plugin_tool"
+    },
+    "/home/stuart/DWC/Tools/createStandalone": {
+      "install_target": ""
+    }
+  }
+}
