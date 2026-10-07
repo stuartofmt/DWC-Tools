@@ -15,7 +15,8 @@ The project's name is its folder name.
 
 Prepare works on the project folder itself: it adds any missing packages the code folder imports to requirements.txt
 (making <code folder>/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
-checks that the venv can import every package, and adds a run.sh / run.bat launcher if there is none.
+checks that the venv can import every package, adds a run.sh / run.bat launcher if there is none, and adds (or
+brings up to date) .github/workflows/release-zips.yml, which attaches the release zips to a GitHub release.
 
 The zip unzips to a <name>/ folder holding README.md, the code folder and an install.py made by this app
 (see INSTALL_TEMPLATE), so the release can be installed on another computer without this app, plus
@@ -510,6 +511,7 @@ def project_view(path, data=None):
                     requirements=requirements_file(path, opts),
                     venv=os.path.isfile(venv_python(os.path.join(path, "venv"))),
                     launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "",
+                    workflow=release_workflow_state(path),
                     zips=release_zips(path))
         files, excluded, truncated = zip_files(path, opts, data)
         view.update(files=files, excluded=excluded, files_truncated=truncated,
@@ -1089,8 +1091,115 @@ def write_launcher(project, opts, lines):
     lines.append(f"{name}: made, to start {main} with the venv")
 
 
+# ---------- the GitHub release workflow that Prepare adds to each project ----------
+RELEASE_WORKFLOW_PATH = os.path.join(".github", "workflows", "release-zips.yml")
+RELEASE_WORKFLOW = r'''# Made by Prepare in Prep_and_Package, which replaces this file each time it runs: change it there, not here.
+# Attaches the project's zips to a GitHub release when the release is published (or for a tag, by hand).
+name: Attach zips to release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload zips to (e.g. v1.2.3)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      # Zips are taken from standalone-zip/ and plugin-zip/. When both hold zips, each is renamed so the two
+      # cannot clash: standalone-<name> and plugin-<name>. When only one does, its zips keep their names.
+      # When neither does, the zips in dist/ are used (as before), keeping their names.
+      - name: Upload zips to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          shopt -s nullglob
+          standalone=(standalone-zip/*.zip)
+          plugin=(plugin-zip/*.zip)
+          out="$RUNNER_TEMP/release-zips"
+          mkdir -p "$out"
+
+          if [ ${#standalone[@]} -gt 0 ] && [ ${#plugin[@]} -gt 0 ]; then
+            for f in "${standalone[@]}"; do cp "$f" "$out/standalone-$(basename "$f")"; done
+            for f in "${plugin[@]}"; do cp "$f" "$out/plugin-$(basename "$f")"; done
+          elif [ ${#standalone[@]} -gt 0 ]; then
+            cp "${standalone[@]}" "$out/"
+          elif [ ${#plugin[@]} -gt 0 ]; then
+            cp "${plugin[@]}" "$out/"
+          else
+            dist=(dist/*.zip)
+            if [ ${#dist[@]} -eq 0 ]; then
+              echo "No zip files found in standalone-zip/, plugin-zip/ or dist/"
+              exit 1
+            fi
+            cp "${dist[@]}" "$out/"
+          fi
+
+          for f in "$out"/*.zip; do
+            echo "Uploading $(basename "$f")"
+            gh release upload "$TAG" "$f" --clobber
+          done
+'''
+
+
+def git_top(folder):
+    """The top folder of the git repository holding folder (the nearest one above it with .git), or None."""
+    path = os.path.abspath(folder)
+    while True:
+        if os.path.exists(os.path.join(path, ".git")):   # a folder, or a file in a worktree or submodule
+            return path
+        up = os.path.dirname(path)
+        if up == path:
+            return None
+        path = up
+
+
+def release_workflow_state(project):
+    """"current", "outdated" (another version, or edited) or "" (none) for the project's release workflow."""
+    try:
+        with open(os.path.join(project, RELEASE_WORKFLOW_PATH), encoding="utf-8", newline="") as f:
+            return "current" if f.read() == RELEASE_WORKFLOW else "outdated"
+    except OSError:
+        return ""
+
+
+def write_release_workflow(project, lines):
+    """Add the release workflow to the project, or bring it up to date. GitHub only runs workflows from the
+    top folder of a repository, so say so when the project is not one."""
+    path = os.path.join(project, RELEASE_WORKFLOW_PATH)
+    state = release_workflow_state(project)
+    if state == "current":
+        lines.append(f"{RELEASE_WORKFLOW_PATH}: up to date")
+    else:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:   # LF on every system, as git and GitHub expect
+            f.write(RELEASE_WORKFLOW)
+        lines.append(f"{RELEASE_WORKFLOW_PATH}: " + ("updated" if state else "made") +
+                     ". When a GitHub release is published, it attaches the zips in standalone-zip/ and plugin-zip/ "
+                     "(named standalone-... and plugin-... when both have zips), or else those in dist/")
+    top = git_top(project)
+    if top is None:
+        lines.append("  This folder is not in a git repository yet: the workflow runs once it is pushed to GitHub "
+                     "as the top folder of a repository")
+    elif os.path.normcase(top) != os.path.normcase(os.path.abspath(project)):
+        lines.append(f"  Not used as it is: the project is inside the git repository {top}, and GitHub only runs "
+                     f"workflows from {os.path.join(top, '.github', 'workflows')}")
+
+
 def run_prepare_job(lines, project, opts):
-    """requirements.txt from the imports -> venv -> pip install -> import check -> launcher."""
+    """requirements.txt from the imports -> venv -> pip install -> import check -> launcher -> release workflow."""
     job = prepare_job
     ok = False
     name = os.path.basename(project)
@@ -1178,6 +1287,8 @@ def run_prepare_job(lines, project, opts):
                              "asks for) and press Prepare again")
         lines.append("=== Launcher ===")
         write_launcher(project, opts, lines)
+        lines.append("=== GitHub release workflow ===")
+        write_release_workflow(project, lines)
 
         version = program_version(project, opts["main"])
         lines.append("")

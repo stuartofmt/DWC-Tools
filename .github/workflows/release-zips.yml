@@ -1,3 +1,5 @@
+# Made by Prepare in Prep_and_Package, which replaces this file each time it runs: change it there, not here.
+# Attaches the project's zips to a GitHub release when the release is published (or for a tag, by hand).
 name: Attach zips to release
 
 on:

@@ -35,6 +35,7 @@ makes the rest.</p>
         ...                everything else in the code folder is copied too
     venv/                  made by Prepare (never part of the zip)
     run.sh                 made by Prepare if there is none (Windows: run.bat): starts the program with the venv
+    .github/workflows/release-zips.yml   made by Prepare: attaches the zips to a GitHub release
     standalone-zip/        made by Make Zip: the release zips</pre>
 
 <h3>Choosing the project</h3>
@@ -76,6 +77,11 @@ makes the rest.</p>
       or the package needs something from the operating system: the log shows the error.</li>
   <li><b>Launcher.</b> <code>run.sh</code> (Windows: <code>run.bat</code>) is added to the project folder, unless there is one already, so the program can
       be run from there with its venv.</li>
+  <li><b>GitHub release workflow.</b> <code>.github/workflows/release-zips.yml</code> is added to the project folder, or replaced if it differs from
+      the current version (so do not edit it there). When a release is published on GitHub, it attaches the zips in <code>standalone-zip/</code> and
+      <code>plugin-zip/</code> to it: named <code>standalone-...</code> and <code>plugin-...</code> when both folders have zips, unchanged when only one
+      does, and if neither does, the zips in <code>dist/</code>. It takes them from the commit the release's tag points to, so commit the zips before
+      releasing. GitHub only runs it when the project folder is the top folder of its repository: the log warns when it is not.</li>
 </ol>
 <p>The log ends by listing what Make Zip will use. Run Prepare again whenever the program's imports change.</p>
 <p>Creating a venv needs Python's venv module. Debian and Raspberry Pi OS ship it separately as <code>python3-venv</code>: if the log says the venv

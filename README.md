@@ -76,6 +76,7 @@ Prepare works on the project folder itself:
 3. **Install**: `requirements.txt` is installed into the venv with the venv's own pip.
 4. **Check**: the venv imports each package the program needs. A failure means something is missing from `requirements.txt`, or the package needs something from the operating system.
 5. **Launcher**: `run.sh` (Windows: `run.bat`) is added to the project folder, unless one exists already, so you can run the program in place with its venv.
+6. **GitHub release workflow**: `.github/workflows/release-zips.yml` is added to the project folder, or replaced if it differs from the current version, so don't edit it there. When a release is published on GitHub, it attaches the zips from `standalone-zip/` and `plugin-zip/`: named `standalone-…` and `plugin-…` when both folders have zips, unchanged when only one does, and if neither does, the zips in `dist/`. It uses the commit the release's tag points to, so commit the zips before releasing. GitHub only runs it when the project folder is the top folder of its repository; the log warns when it isn't.
 
 The log ends by listing what Make Zip will use. Run Prepare again whenever the program's imports change.
 
