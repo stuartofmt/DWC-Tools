@@ -146,7 +146,7 @@ const ProjectPicker = {
       let info = null;
       view.value = j;
       if(!j.exists){ note.kind = "bad"; note.text = j.error; }
-      else if(!j.is_project){ note.kind = "bad"; note.text = `${j.path} has no code folder with a .py program in it`; }
+      else if(!j.is_project){ note.kind = "bad"; note.text = `${j.path} has no .py file in it or below it`; }
       else{
         const o = j.options;
         options.main = o.main;
@@ -157,7 +157,7 @@ const ProjectPicker = {
         }else{
           info = j;
           note.kind = "good";
-          note.text = `Project "${j.name}" - runs code/${o.main}, ` +
+          note.text = `Project "${j.name}" - runs ${o.main}, ` +
             (j.requirements ? `pip installs ${j.requirements}` : "no requirements.txt yet (Prepare makes one)") +
             (j.has_readme ? "" : " (no README.md)");
         }
@@ -314,7 +314,7 @@ const ProjectPicker = {
         <v-btn v-else icon="mdi-folder-search-outline" title="Browse" @click="openBrowser"></v-btn>
       </template>
     </v-combobox>
-    <div class="note">The one holding the <code>code</code> folder. Tab completes a folder name.</div>
+    <div class="note">Any folder with a .py file in it or below it. Tab completes a folder name.</div>
     <div :class="['note', note.kind]">{{ note.text }}</div>
 
     <v-dialog v-model="dlg.open" max-width="700" :fullscreen="xs" scrollable @after-enter="filterBox && filterBox.focus()">

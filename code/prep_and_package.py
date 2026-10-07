@@ -2,21 +2,22 @@
 """Prep and Package - one small web app that prepares and releases standalone Python programs.
   /          Home        choose a tool
   /prepare   Prepare     make the project's requirements.txt from its imports, create its venv and install into it
-  /makezip   Make Zip    build dist/<name>-<version>.zip (or dist/<name>.zip) from the project
+  /makezip   Make Zip    build standalone-zip/<name>-<version>.zip (or standalone-zip/<name>.zip) from the project
   /settings  Settings    the folder project browsing starts in, the preferred port and where to listen
   /readme    Instructions on use
 
-A project is a folder holding a code folder with the program in it:
-  <project>/README.md            (optional)
-  <project>/code/<main>.py       the program; it may set its version, e.g. progVersion = '1.0.0'
-  <project>/code/requirements.txt  what pip installs into the venv (or <project>/requirements.txt)
+A project is any folder with a .py file in it or anywhere below it. One of those files is its main program
+(a project option), and the main program's folder is the project's code folder:
+  <project>/README.md                     (optional)
+  <project>/<code folder>/<main>.py       the program, e.g. code/scanCam.py; it may set its version: progVersion = '1.0.0'
+  <project>/<code folder>/requirements.txt  what pip installs into the venv (or <project>/requirements.txt)
 The project's name is its folder name.
 
-Prepare works on the project folder itself: it adds any missing packages the code imports to requirements.txt
-(making code/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
+Prepare works on the project folder itself: it adds any missing packages the code folder imports to requirements.txt
+(making <code folder>/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
 checks that the venv can import every package, and adds a run.sh / run.bat launcher if there is none.
 
-The zip unzips to a <name>/ folder holding README.md, code/ and an install.py made by this app
+The zip unzips to a <name>/ folder holding README.md, the code folder and an install.py made by this app
 (see INSTALL_TEMPLATE), so the release can be installed on another computer without this app, plus
 run.sh and run.bat that start install.py with the system Python (see INSTALL_LAUNCHERS).
 
@@ -46,6 +47,7 @@ import json
 import logging
 import os
 import platform
+import posixpath
 import re
 import shutil
 import signal
@@ -76,15 +78,18 @@ SETTINGS_NAME = ".prep_and_package.json"
 SETTINGS_FILE = os.path.join(SCRIPT_DIR, SETTINGS_NAME)
 RECENT_MAX = 8   # most recent projects remembered
 FILES_LIMIT = 3000   # most files Make Zip's Exclude files list shows
-CODE_DIR = "code"
 README = "README.md"
-# Never part of a release. Other files can be left out with Make Zip's Exclude files list (remembered per project)
-SKIP_DIRS = ("__pycache__", "venv", ".git")
+# Never part of a release, and never looked in for .py files. Other files can be left out with Make Zip's
+# Exclude files list (remembered per project). At the top of the project, the folder Make Zip puts zips in and the
+# dist folder (where other tools, such as plugin_tool, put theirs) are left out too.
+SKIP_DIRS = ("__pycache__", "venv", ".venv", ".git", "node_modules")
+ZIP_DIR = "standalone-zip"
+SKIP_TOP_DIRS = (ZIP_DIR, "dist")
 SKIP_SUFFIXES = (".pyc",)
+SEARCH_LIMIT = 2000     # most folders looked in for a project's .py files
+PROGRAMS_LIMIT = 1000   # most .py files offered as a project's main program
 # Project options until they are changed on a tool page
 DEFAULT_SITE_PACKAGES = True
-# Where the project's requirements.txt can be, in the order looked at (relative to the project)
-REQUIREMENTS = (CODE_DIR + "/requirements.txt", "requirements.txt")
 # The program's version, if it sets one: progVersion = '1.0.0' (also __version__ / VERSION / version)
 VERSION_LINE = re.compile(r"""^\s*(?:progVersion|__version__|VERSION|version)\s*=\s*['"]([^'"\s]+)['"]""", re.M)
 VERSION_OK = re.compile(r"[0-9A-Za-z._+-]+")   # it becomes part of the zip's file name
@@ -391,18 +396,38 @@ def full_path(raw):
     return os.path.normpath(path) if os.path.isabs(path) else None
 
 
+def py_tree(folder):
+    """os.walk of folder, leaving out SKIP_DIRS, hidden folders and its SKIP_TOP_DIRS, and stopping after
+    SEARCH_LIMIT folders (so a huge folder, such as a home folder, cannot hold things up)."""
+    for seen, (dirpath, dirnames, filenames) in enumerate(os.walk(folder)):
+        if seen >= SEARCH_LIMIT:
+            return
+        dirnames[:] = sorted((d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+                              and not (dirpath == folder and d in SKIP_TOP_DIRS)), key=natural)
+        yield dirpath, dirnames, sorted(filenames, key=natural)
+
+
 def programs(project):
-    """The .py files at the top of the project's code folder: the candidates for its main program."""
-    try:
-        names = os.listdir(os.path.join(project, CODE_DIR))
-    except OSError:
-        return []
-    return sorted((n for n in names if n.endswith(".py") and os.path.isfile(os.path.join(project, CODE_DIR, n))),
-                  key=natural)
+    """The .py files in the project folder and below it, as paths relative to it ("code/scanCam.py"):
+    the candidates for its main program. The ones nearest the top come first."""
+    out = []
+    for dirpath, _, filenames in py_tree(project):
+        for n in filenames:
+            if n.endswith(".py"):
+                out.append(os.path.relpath(os.path.join(dirpath, n), project).replace(os.sep, "/"))
+                if len(out) >= PROGRAMS_LIMIT:
+                    return out
+    return out
 
 
 def is_project(folder):
-    return bool(programs(folder))
+    """Whether there is a .py file in folder or anywhere below it."""
+    return any(n.endswith(".py") for _, _, filenames in py_tree(folder) for n in filenames)
+
+
+def code_dir(opts):
+    """The project's code folder, relative to the project: the main program's folder ("" for the project folder)."""
+    return posixpath.dirname(opts["main"])
 
 
 def options_for(project, data=None):
@@ -412,18 +437,30 @@ def options_for(project, data=None):
     saved = saved if isinstance(saved, dict) else {}
     found = programs(project)
     main = saved.get("main")
+    if isinstance(main, str) and main not in found and "code/" + main in found:
+        main = "code/" + main   # saved by an older version, which only looked in the code folder
     if main not in found:
-        name = os.path.basename(project)
-        main = next((p for p in found if p.lower() == (name + ".py").lower()), found[0] if len(found) == 1 else "")
+        # Picked for you: the one named after the project, else the only .py file, else the only one at the top
+        # of a code folder (any case)
+        name = (os.path.basename(project) + ".py").lower()
+        in_code = [p for p in found if posixpath.dirname(p).lower() == "code"]
+        main = next((p for p in found if posixpath.basename(p).lower() == name),
+                    found[0] if len(found) == 1 else in_code[0] if len(in_code) == 1 else "")
 
     site = saved.get("site_packages")
     return {"main": main,
             "site_packages": site if isinstance(site, bool) else DEFAULT_SITE_PACKAGES}
 
 
-def requirements_file(project):
-    """The project's requirements.txt, relative to the project ("code/requirements.txt" or "requirements.txt"), or ""."""
-    return next((r for r in REQUIREMENTS if os.path.isfile(os.path.join(project, r))), "")
+def requirements_places(opts):
+    """Where the project's requirements.txt can be, relative to the project, in the order looked at:
+    in the code folder, then in the project folder."""
+    return list(dict.fromkeys([posixpath.join(code_dir(opts), "requirements.txt"), "requirements.txt"]))
+
+
+def requirements_file(project, opts):
+    """The project's requirements.txt, relative to the project (e.g. "code/requirements.txt"), or ""."""
+    return next((r for r in requirements_places(opts) if os.path.isfile(os.path.join(project, r))), "")
 
 
 def program_version(project, main):
@@ -431,17 +468,17 @@ def program_version(project, main):
     if not main:
         return None
     try:
-        with open(os.path.join(project, CODE_DIR, main), encoding="utf-8", errors="replace") as f:
+        with open(os.path.join(project, main), encoding="utf-8", errors="replace") as f:
             m = VERSION_LINE.search(f.read())
     except OSError:
         return None
     return m.group(1) if m and VERSION_OK.fullmatch(m.group(1)) else None
 
 
-def dist_zips(project):
-    """The zip files in the project's dist folder, newest first."""
+def release_zips(project):
+    """The zip files Make Zip made, in the project's standalone-zip folder, newest first."""
     out = []
-    for f in glob(os.path.join(project, "dist", "*.zip")):
+    for f in glob(os.path.join(project, ZIP_DIR, "*.zip")):
         try:
             st = os.stat(f)
         except OSError:
@@ -467,10 +504,10 @@ def project_view(path, data=None):
         opts = options_for(path, data)
         view.update(programs=found, options=opts, version=program_version(path, opts["main"]),
                     has_readme=os.path.isfile(os.path.join(path, README)),
-                    requirements=requirements_file(path),
+                    requirements=requirements_file(path, opts),
                     venv=os.path.isfile(venv_python(os.path.join(path, "venv"))),
                     launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "",
-                    zips=dist_zips(path))
+                    zips=release_zips(path))
         files, excluded, truncated = zip_files(path, opts, data)
         view.update(files=files, excluded=excluded, files_truncated=truncated,
                     needed=sorted(needed_files(path, opts)))
@@ -486,12 +523,13 @@ def check_project(raw, need_requirements=True):
     if not os.path.isdir(path):
         return None, None, f"'{path}' is not an existing folder"
     if not is_project(path):
-        return None, None, f"'{path}' has no {CODE_DIR} folder with a .py program in it"
-    if need_requirements and not requirements_file(path):
-        return None, None, f"'{path}' has no requirements.txt (in {CODE_DIR} or the project folder): press Prepare to make one"
+        return None, None, f"'{path}' has no .py file in it or below it"
     opts = options_for(path)
     if not opts["main"]:
         return None, None, "Choose the main program in the project options"
+    if need_requirements and not requirements_file(path, opts):
+        return None, None, (f"'{path}' has no requirements.txt (in {code_dir(opts) or 'the project folder'}"
+                            f"{' or the project folder' if code_dir(opts) else ''}): press Prepare to make one")
     return path, opts, None
 
 
@@ -522,7 +560,7 @@ import sys
 from pathlib import Path
 
 NAME = __NAME_R__
-MAIN = __MAIN_R__            # the program, in the code folder
+MAIN = __MAIN_R__            # the program, relative to the install directory
 REQUIREMENTS = __REQ_R__     # what pip installs into the venv
 SYSTEM_SITE_PACKAGES = __SITE_R__   # whether the venv can also use Python packages already installed on the system
 
@@ -531,20 +569,21 @@ IS_WINDOWS = sys.platform == 'win32'
 here = Path(__file__).resolve().parent
 default_target = Path.home() / NAME
 # Copied into the install directory; the venv and launcher are created there.
-program_files = ['README.md', 'code', 'requirements.txt']
+program_files = __FILES_R__
+MAIN_WINDOWS = MAIN.replace('/', '\\')
 
 if IS_WINDOWS:
     launcher_name = 'run.bat'
     launcher_script = ('@echo off\n'
                        f'rem Start {NAME} using its venv (recreate it with install.py).\n'
                        'cd /d "%~dp0"\n'
-                       f'venv\\Scripts\\python.exe -u code\\{MAIN} %*\n')
+                       f'venv\\Scripts\\python.exe -u {MAIN_WINDOWS} %*\n')
 else:
     launcher_name = 'run.sh'
     launcher_script = ('#!/bin/bash\n'
                        f'# Start {NAME} using its venv (recreate it with python3 install.py).\n'
                        'cd "$(dirname "$0")"\n'
-                       f'exec venv/bin/python -u code/{MAIN} "$@"\n')
+                       f'exec venv/bin/python -u {MAIN} "$@"\n')
 
 
 def gui():
@@ -657,7 +696,7 @@ def create_venv(target: Path):
 def main():
     parser = argparse.ArgumentParser(description=f'Install {NAME}')
     parser.add_argument('target', nargs='?', help=f'the directory to install into (asked for when left out)')
-    parser.add_argument('--source', help='the folder holding README.md and code (default: the folder this script is in)')
+    parser.add_argument('--source', help='the folder holding the program (default: the folder this script is in)')
     parser.add_argument('--no-run', action='store_true', help=f'do not start {NAME} once it is installed')
     parser.add_argument('--no-gui', action='store_true', help='ask for the install directory in the terminal, not in a window')
     args = parser.parse_args()
@@ -724,10 +763,11 @@ INSTALL_LAUNCHERS = {
 }
 
 
-def make_install_py(name, opts, requirements):
-    """The install.py for a project, with its name, options and requirements.txt (relative path) filled in."""
+def make_install_py(name, opts, requirements, files):
+    """The install.py for a project, with its name, options, requirements.txt (relative path) and the top-level
+    files and folders it copies (those of the zip) filled in."""
     values = {"__NAME_R__": repr(name), "__MAIN_R__": repr(opts["main"]), "__REQ_R__": repr(requirements),
-              "__SITE_R__": repr(opts["site_packages"])}
+              "__SITE_R__": repr(opts["site_packages"]), "__FILES_R__": repr(sorted(files))}
     text = INSTALL_TEMPLATE
     for key, value in values.items():
         text = text.replace(key, value)
@@ -735,28 +775,39 @@ def make_install_py(name, opts, requirements):
 
 
 # ---------- Make Zip: the job ----------
-def release_files(project, exclude=()):
-    """(path on disk, path inside the zip below <name>/) for README.md, requirements.txt and everything in code,
-    leaving out the paths (relative to the project) in exclude."""
-    skip = set(exclude)
+# Made by Make Zip itself, so never taken from the project folder
+MADE_FILES = {"install.py", "run.sh", "run.bat"}
+
+
+def release_files(project, opts, exclude=()):
+    """(path on disk, path inside the zip below <name>/) for README.md, requirements.txt and everything in the
+    code folder, leaving out the paths (relative to the project) in exclude."""
+    skip, given = set(exclude), set()
     for top in (README, "requirements.txt"):
         path = os.path.join(project, top)
         if os.path.isfile(path) and top not in skip:
+            given.add(top)
             yield path, top
-    code_dir = os.path.join(project, CODE_DIR)
-    for dirpath, dirnames, filenames in os.walk(code_dir):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+    top_dir = os.path.join(project, code_dir(opts))
+    for dirpath, dirnames, filenames in os.walk(top_dir):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not (dirpath == project and d in SKIP_TOP_DIRS))
         for name in sorted(filenames):
-            if not name.endswith(SKIP_SUFFIXES):
-                path = os.path.join(dirpath, name)
-                rel = os.path.relpath(path, project).replace(os.sep, "/")
-                if rel not in skip:
-                    yield path, rel
+            if name.endswith(SKIP_SUFFIXES) or (dirpath == project and name in MADE_FILES):
+                continue
+            path = os.path.join(dirpath, name)
+            rel = os.path.relpath(path, project).replace(os.sep, "/")
+            if rel not in skip and rel not in given:
+                yield path, rel
+
+
+def top_level(files):
+    """The top-level names (what install.py copies) of paths inside a release."""
+    return {rel.split("/")[0] for rel in files}
 
 
 def needed_files(project, opts):
     """Files a release cannot do without (install.py runs the main program and installs requirements.txt)."""
-    return {f"{CODE_DIR}/{opts['main']}", requirements_file(project)} - {"", f"{CODE_DIR}/"}
+    return {opts["main"], requirements_file(project, opts)} - {""}
 
 
 def zip_files(project, opts, data=None):
@@ -764,7 +815,7 @@ def zip_files(project, opts, data=None):
     that can go into the zip, at most FILES_LIMIT of them; excluded the ones ticked last time for this project
     that still exist (none until something has been ticked)."""
     files = []
-    for _, rel in release_files(project):
+    for _, rel in release_files(project, opts):
         files.append(rel)
         if len(files) > FILES_LIMIT:
             break
@@ -786,20 +837,20 @@ def run_zip_job(lines, project, opts, exclude):
     try:
         version = program_version(project, opts["main"])
         lines.append(f"=== Make zip of {name}" + (f" version {version} ===" if version else " (no version set) ==="))
-        out = os.path.join(project, "dist", f"{name}-{version}.zip" if version else f"{name}.zip")
+        out = os.path.join(project, ZIP_DIR, f"{name}-{version}.zip" if version else f"{name}.zip")
         os.makedirs(os.path.dirname(out), exist_ok=True)
-        count = 0
+        added = []
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
             if exclude:
                 lines.append("Left out (Exclude files): " + ", ".join(exclude))
-            for path, rel in release_files(project, exclude):
+            for path, rel in release_files(project, opts, exclude):
                 if job.stopping:
                     raise InterruptedError
                 z.write(path, f"{name}/{rel}")
                 lines.append(f"  adding: {name}/{rel}")
-                count += 1
-            z.writestr(f"{name}/install.py", make_install_py(name, opts, requirements_file(project)))
-            lines.append(f"  adding: {name}/install.py   (made by this app for {CODE_DIR}/{opts['main']})")
+                added.append(rel)
+            z.writestr(f"{name}/install.py", make_install_py(name, opts, requirements_file(project, opts), top_level(added)))
+            lines.append(f"  adding: {name}/install.py   (made by this app for {opts['main']})")
             for launcher, text in INSTALL_LAUNCHERS.items():
                 info = zipfile.ZipInfo(f"{name}/{launcher}", time.localtime()[:6])
                 info.compress_type = zipfile.ZIP_DEFLATED
@@ -883,11 +934,6 @@ def pip_key(name):
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def code_tree(project):
-    """(dirpath, dirnames, filenames) for the project's code folder, leaving out venv, __pycache__ and hidden folders."""
-    for dirpath, dirnames, filenames in os.walk(os.path.join(project, CODE_DIR)):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
-        yield dirpath, dirnames, sorted(filenames)
 
 
 IMPORT_ERRORS = {"ImportError", "ModuleNotFoundError", "Exception", "BaseException"}
@@ -910,12 +956,12 @@ def optional_imports(tree):
     return out
 
 
-def imported_modules(project, stdlib, lines):
+def imported_modules(project, opts, stdlib, lines):
     """({top-level module name: [files importing it]}, {the same for optional imports}) for the modules the code
-    imports that are neither in Python's standard library nor part of the project (any .py file or folder in the
-    code folder). An import is optional when try/except ImportError guards it everywhere it appears."""
+    folder imports that are neither in Python's standard library nor part of the project (any .py file or folder in
+    the code folder). An import is optional when try/except ImportError guards it everywhere it appears."""
     local, files = set(), []
-    for dirpath, dirnames, filenames in code_tree(project):
+    for dirpath, dirnames, filenames in py_tree(os.path.join(project, code_dir(opts))):
         local.update(dirnames)
         for n in filenames:
             if n.endswith(".py"):
@@ -975,12 +1021,12 @@ def marker_applies(marker):
         return True
 
 
-def update_requirements(project, packages, lines, other_platform=()):
-    """Add the pip packages not yet listed to the project's requirements.txt (code/requirements.txt is made
+def update_requirements(project, opts, packages, lines, other_platform=()):
+    """Add the pip packages not yet listed to the project's requirements.txt (one is made in the code folder
     if there is none). Nothing already in it is changed or removed. other_platform: listed packages the code
     imports that are for another platform (not added, but not reported as unused either).
     Returns its path relative to the project."""
-    rel = requirements_file(project) or REQUIREMENTS[0]
+    rel = requirements_file(project, opts) or requirements_places(opts)[0]
     path = os.path.join(project, rel)
     text = ""
     if os.path.isfile(path):
@@ -1030,14 +1076,14 @@ def write_launcher(project, opts, lines):
     main = opts["main"]
     if IS_WINDOWS:
         text = ("@echo off\r\nrem Start the program with its venv (made by Prepare in Prep_and_Package).\r\n"
-                f'cd /d "%~dp0"\r\nvenv\\Scripts\\python.exe -u {CODE_DIR}\\{main} %*\r\n')
+                f'cd /d "%~dp0"\r\nvenv\\Scripts\\python.exe -u {main.replace("/", os.sep)} %*\r\n')
     else:
         text = ("#!/bin/bash\n# Start the program with its venv (made by Prepare in Prep_and_Package).\n"
-                f'cd "$(dirname "$0")"\nexec venv/bin/python -u {CODE_DIR}/{main} "$@"\n')
+                f'cd "$(dirname "$0")"\nexec venv/bin/python -u {main} "$@"\n')
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text)
     os.chmod(path, 0o755)
-    lines.append(f"{name}: made, to start {CODE_DIR}/{main} with the venv")
+    lines.append(f"{name}: made, to start {main} with the venv")
 
 
 def run_prepare_job(lines, project, opts):
@@ -1053,8 +1099,9 @@ def run_prepare_job(lines, project, opts):
         if probe.returncode != 0:
             raise RuntimeError(f"Could not ask {py} about its packages: {probe.stderr.strip()}")
         info = json.loads(probe.stdout)
-        modules, optional = imported_modules(project, set(info["stdlib"]), lines)
-        req_path = os.path.join(project, requirements_file(project)) if requirements_file(project) else ""
+        lines.append(f"Code folder: {code_dir(opts) or 'the project folder'} (where the main program {opts['main']} is)")
+        modules, optional = imported_modules(project, opts, set(info["stdlib"]), lines)
+        req_path = os.path.join(project, requirements_file(project, opts)) if requirements_file(project, opts) else ""
         listed = {}
         if req_path:
             with open(req_path, encoding="utf-8-sig") as f:
@@ -1090,7 +1137,7 @@ def run_prepare_job(lines, project, opts):
                          f"add it to requirements.txt yourself if you want it")
 
         lines.append("=== requirements.txt ===")
-        req = update_requirements(project, packages, lines, other_platform_packages)
+        req = update_requirements(project, opts, packages, lines, other_platform_packages)
 
         venv = os.path.join(project, "venv")
         site = opts["site_packages"] and not IS_WINDOWS   # as install.py does
@@ -1118,7 +1165,7 @@ def run_prepare_job(lines, project, opts):
             return
         to_check = [m for m in modules if m not in other_platform]
         if to_check:
-            code = job.step(lines, [vpy, "-u", "-c", CHECK, *to_check], os.path.join(project, CODE_DIR),
+            code = job.step(lines, [vpy, "-u", "-c", CHECK, *to_check], os.path.join(project, code_dir(opts)),
                             title="Check that the venv can import them",
                             shown=f"{vpy} -c <import each of: {' '.join(to_check)}>")
             if code is None:
@@ -1132,7 +1179,7 @@ def run_prepare_job(lines, project, opts):
         version = program_version(project, opts["main"])
         lines.append("")
         lines.append("Ready for Make Zip:" if code == 0 else "Make Zip would use:")
-        lines.append(f"  main program  {CODE_DIR}/{opts['main']}" + (f", version {version}" if version else ", no version set"))
+        lines.append(f"  main program  {opts['main']}" + (f", version {version}" if version else ", no version set"))
         lines.append(f"  requirements  {req}")
         lines.append("  README.md     " + ("yes" if os.path.isfile(os.path.join(project, README)) else
                                          "none (optional: it goes into the zip with the program)"))
@@ -1283,7 +1330,7 @@ def api_project_options():
         return jsonify(error="Not a project folder"), 400
     main = d.get("main", "")
     if main not in programs(path):
-        return jsonify(error=f"Main program: choose one of the .py files in {CODE_DIR}"), 400
+        return jsonify(error="Main program: choose one of the project's .py files"), 400
     site = d.get("site_packages")
     if not isinstance(site, bool):
         return jsonify(error="System site packages: invalid value"), 400
@@ -1302,7 +1349,9 @@ def api_install_py():
     opts = options_for(path)
     if not opts["main"]:
         return Response("Choose the main program first", 400, mimetype="text/plain")
-    return Response(make_install_py(os.path.basename(path), opts, requirements_file(path) or "requirements.txt"), mimetype="text/plain")
+    files = top_level(rel for _, rel in release_files(path, opts, zip_files(path, opts)[1]))
+    req = requirements_file(path, opts) or requirements_places(opts)[0]
+    return Response(make_install_py(os.path.basename(path), opts, req, files), mimetype="text/plain")
 
 
 def config_view():
@@ -1377,7 +1426,7 @@ def zip_start():
     exclude = d.get("exclude", [])
     if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
         return jsonify(error="Invalid exclusion list"), 400
-    if not set(exclude) <= {rel for _, rel in release_files(project)}:
+    if not set(exclude) <= {rel for _, rel in release_files(project, opts)}:
         return jsonify(error="An excluded file is not in the project"), 400
     needed = set(exclude) & needed_files(project, opts)
     if needed:
@@ -1394,12 +1443,12 @@ def zip_start():
 
 @app.get("/makezip/api/download")
 def zip_download():
-    """Download one of the zips in a project's dist folder."""
+    """Download one of the zips in a project's standalone-zip folder."""
     project = full_path(request.args.get("project", ""))
     name = request.args.get("name", "")
-    if project is None or not os.path.isdir(project) or name not in {z["name"] for z in dist_zips(project)}:
+    if project is None or not os.path.isdir(project) or name not in {z["name"] for z in release_zips(project)}:
         return jsonify(error="No such zip file"), 404
-    return send_from_directory(os.path.join(project, "dist"), name, as_attachment=True)
+    return send_from_directory(os.path.join(project, ZIP_DIR), name, as_attachment=True)
 
 
 # ---------- routes: Prepare ----------

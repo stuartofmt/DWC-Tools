@@ -7,7 +7,7 @@ change that on the <a href="/settings">Settings</a> page if your projects live s
 <ul>
   <li><b>Prepare</b> gets the project folder ready: it works out <code>requirements.txt</code> from the program's imports, creates the project's
       Python venv, installs <code>requirements.txt</code> into it with pip and checks that every package can be imported.</li>
-  <li><b>Make Zip</b> builds the project's release zip in its <code>dist</code> folder, ready to copy to another computer.</li>
+  <li><b>Make Zip</b> builds the project's release zip in its <code>standalone-zip</code> folder, ready to copy to another computer.</li>
 </ul>
 <p>They run as separate jobs, so both can run at the same time. Nothing is installed system-wide (no apt, no sudo): every package goes into the
 program's own venv, using the venv's pip. That works on Linux versions whose system Python is "externally managed" and refuses <code>pip install</code>.</p>
@@ -22,17 +22,20 @@ There is no login, so anyone who can reach the page can prepare projects and mak
 <b>This computer only</b> on the Settings page.</p>
 
 <h3>What a project looks like</h3>
-<p>A project is a folder with a <code>code</code> folder holding the program. Its name is the folder's name. Nothing else needs adding: Prepare
+<p>A project is any folder with a <code>.py</code> file in it or anywhere below it (<code>venv</code>, <code>node_modules</code>,
+<code>__pycache__</code> and hidden folders are not looked in). Its name is the folder's name. One of its <code>.py</code> files is the
+<b>main program</b> (see Project options), and the folder the main program is in is the project's <b>code folder</b>: usually
+<code>code</code>, as below, but it can be any folder, such as <code>Code/dsf</code> in a DWC plugin. Nothing else needs adding: Prepare
 makes the rest.</p>
 <pre>scanCam/                   the project folder: its name is the project's name
     README.md              optional, copied with the program
     code/
         scanCam.py         the main program, which may set its version: progVersion = '1.0.0'
         requirements.txt   what pip installs into the venv: made by Prepare (it can also be in the project folder)
-        ...                everything else in code is copied too
+        ...                everything else in the code folder is copied too
     venv/                  made by Prepare (never part of the zip)
     run.sh                 made by Prepare if there is none (Windows: run.bat): starts the program with the venv
-    dist/                  made by Make Zip</pre>
+    standalone-zip/        made by Make Zip: the release zips</pre>
 
 <h3>Choosing the project</h3>
 <ul>
@@ -48,22 +51,22 @@ makes the rest.</p>
 <h3>Project options</h3>
 <p>Each project has options, under <b>Project options</b> below the project. They are saved as soon as you change them and used by both tools.</p>
 <ul>
-  <li><b>Main program</b>: the <code>.py</code> file in <code>code</code> that starts the program. It is picked for you when it has the project's name
-      (<code>scanCam.py</code>) or is the only one. If it sets a version, with a line such as <code>progVersion = '1.0.0'</code>
+  <li><b>Main program</b>: the <code>.py</code> file that starts the program, chosen from all the project's <code>.py</code> files. It is picked
+      for you when it has the project's name (<code>scanCam.py</code>), is the only one, or is the only one at the top of a <code>code</code> folder. If it sets a version, with a line such as <code>progVersion = '1.0.0'</code>
       (<code>__version__</code> or <code>VERSION</code> work too), the version goes into the zip's name. A version is not needed.</li>
   <li><b>The venv can also use Python packages already installed on the system</b> (ticked by default): the venv then sees packages that came with
       the operating system, such as picamera2 on Raspberry Pi OS, as well as its own. Untick it for a venv that holds only what <code>requirements.txt</code> lists.</li>
 </ul>
-<p>Make Zip needs a <code>requirements.txt</code>, in <code>code</code> or in the project folder: press Prepare to make one.</p>
+<p>Make Zip needs a <code>requirements.txt</code>, in the code folder or in the project folder: press Prepare to make one.</p>
 
 <h3>Prepare</h3>
 <ol>
   <li>Choose the project and press <b>Prepare</b>. The line above the button shows what the project has now.</li>
-  <li><b>requirements.txt.</b> Every <code>.py</code> file in <code>code</code> is read for its <code>import</code> lines. Python's own modules and the
-      project's own modules (any <code>.py</code> file or folder in <code>code</code>) are skipped. Each other import is turned into the pip package
+  <li><b>requirements.txt.</b> Every <code>.py</code> file in the code folder (and below it) is read for its <code>import</code> lines. Python's own modules and the
+      project's own modules (any <code>.py</code> file or folder in the code folder) are skipped. Each other import is turned into the pip package
       that provides it, as recorded by the packages installed on this computer (for example <code>yaml</code> comes from <code>PyYAML</code>),
       or guessed from a short list of well-known names when it is not installed here (<code>cv2</code> is <code>opencv-python</code>).
-      The packages that are missing are added to the project's <code>requirements.txt</code>, which is made in <code>code</code> if there is none.
+      The packages that are missing are added to the project's <code>requirements.txt</code>, which is made in the code folder if there is none.
       Nothing already in it is changed or removed, so your own additions and version pins stay. Packages it lists that nothing imports are reported.
       An import inside <code>try: ... except ImportError:</code> is optional, as the program copes without it: it is reported but not added.</li>
   <li><b>venv.</b> The project's <code>venv</code> folder is created (with the system packages option above), or the existing one is used.
@@ -81,15 +84,17 @@ could not be created, that package is missing and has to be installed once by th
 <h3>Make Zip</h3>
 <ol>
   <li>Choose the project and press <b>Make Zip</b>.</li>
-  <li>The zip is <code>dist/&lt;name&gt;-&lt;version&gt;.zip</code> in the project, or <code>dist/&lt;name&gt;.zip</code> when the main program sets no version,
+  <li>The zip is <code>standalone-zip/&lt;name&gt;-&lt;version&gt;.zip</code> in the project, or <code>standalone-zip/&lt;name&gt;.zip</code> when the main program sets no version,
       and replaces an earlier zip of the same name. It unzips to a
-      <code>&lt;name&gt;</code> folder holding <code>README.md</code>, <code>code</code> (and <code>requirements.txt</code> when it is in the project folder) and an <code>install.py</code> made from the project options, with <code>run.sh</code> and <code>run.bat</code> to start it
-      (<b>See the install.py these make</b> shows it). <code>__pycache__</code>, <code>venv</code> and <code>.git</code> folders and <code>*.pyc</code> files are always left out.</li>
+      <code>&lt;name&gt;</code> folder holding <code>README.md</code>, the code folder (with the folders above it, such as <code>Code/dsf</code>; only the code folder's
+      contents go in) (and <code>requirements.txt</code> when it is in the project folder) and an <code>install.py</code> made from the project options, with <code>run.sh</code> and <code>run.bat</code> to start it
+      (<b>See the install.py these make</b> shows it). <code>__pycache__</code>, <code>venv</code>, <code>.venv</code>, <code>.git</code> and <code>node_modules</code> folders, the project's
+      <code>standalone-zip</code> and <code>dist</code> folders and <code>*.pyc</code> files are always left out.</li>
   <li>To leave out more, open <b>Exclude files</b>, which lists every file that would go into the zip, and tick the ones you don't want,
       such as a settings file that belongs to this computer. The ticks are remembered for each project when you press Make Zip.
       Nothing is left out until you tick it, hidden files (names starting with a dot, such as <code>.plugin_build_exclusions.json</code>) included.
       The main program and <code>requirements.txt</code> can't be left out, as <code>install.py</code> needs them.</li>
-  <li><b>Zips in dist</b> lists the zips made so far, newest first. Click one to download it.</li>
+  <li><b>Zips in standalone-zip</b> lists the zips made so far, newest first. Click one to download it.</li>
 </ol>
 <p>On the other computer, unzip it and run <code>./run.sh</code> in the unzipped folder (on Windows: <code>run.bat</code>), or <code>python3 install.py</code> (on Windows: <code>py install.py</code>).
 It asks for the install folder (in a folder window on a desktop with Python's tkinter, otherwise in the terminal, where pressing Enter takes the project's name
@@ -118,7 +123,7 @@ Venvs are made with <code>{{ c.python || "..." }}</code>, the Python outside any
 <h3>If something goes wrong</h3>
 <table>
   <tr><th>You see</th><th>Try</th></tr>
-  <tr><td>"... has no code folder with a .py program in it"</td><td>Choose the project's top folder, the one holding <code>code</code>, not <code>code</code> itself</td></tr>
+  <tr><td>"... has no .py file in it or below it"</td><td>Choose the folder that holds the program: there is no Python file in this one</td></tr>
   <tr><td>"... has no requirements.txt" (Make Zip)</td><td>Press Prepare first: it makes one</td></tr>
   <tr><td>"Could not create the venv"</td><td>See the note about <code>python3-venv</code> under Prepare above</td></tr>
   <tr><td>"pip could not install everything"</td><td>A name in <code>requirements.txt</code> is wrong (often a guessed one) or that version does not exist: correct it and press Prepare again</td></tr>

@@ -1,4 +1,4 @@
-name: Attach dist zip to release
+name: Attach standalone-zip zip to release
 
 on:
   release:
@@ -26,10 +26,10 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           shopt -s nullglob
-          files=(dist/*.zip)
+          files=(standalone-zip/*.zip)
 
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No zip files found in dist/"
+            echo "No zip files found in standalone-zip/"
             exit 1
           fi
 

@@ -7,7 +7,7 @@
         <v-expansion-panel-text>
           <div class="note mb-2">Ticked files are left out of the zip. The ticks are remembered for this project when you press Make Zip.
             Nothing is ticked until you tick it: check for files that belong to this computer, such as a settings file.
-            Always left out: venv, __pycache__ and .git folders, *.pyc files.</div>
+            Always left out: venv, .venv, __pycache__, .git and node_modules folders, the project's standalone-zip and dist folders, *.pyc files.</div>
           <div v-if="info.files_truncated" class="note bad">Only the first {{ info.files.length }} files are listed.</div>
           <v-virtual-scroll :items="info.files" max-height="16rem" class="exfiles">
             <template #default="{ item }">
@@ -17,7 +17,7 @@
           </v-virtual-scroll>
         </v-expansion-panel-text>
       </v-expansion-panel>
-      <v-expansion-panel v-if="info.zips.length" :title="`Zips in dist (${info.zips.length})`">
+      <v-expansion-panel v-if="info.zips.length" :title="`Zips in standalone-zip (${info.zips.length})`">
         <v-expansion-panel-text>
           <v-table density="compact" class="zips">
             <tbody>
