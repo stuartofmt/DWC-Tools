@@ -102,7 +102,8 @@ Choosing a version that is already downloaded **deletes that folder and download
 3. Press **Build**. What happens depends on `plugin.json`:
    - **No `dwcVersion` entry** (for example a plugin that only runs on the Pi): the contents of the Code folder are zipped. No build is needed.
    - **`dwcVersion` present**: the plugin is built against the chosen DWC version with that version's `scripts/build-plugin.js`. Old `dist` and `pkg` folders, and any `__pycache__`, `*.pyc` and `*.log` files, are cleared first.
-4. The result is written in the **plugin version folder** as `<plugin name>-<manifest version>.zip`, even when the Code folder is a sub-folder. Older zips in that folder are removed first.
+4. Unless a Build output folder is set (next step), the result is written in the **plugin version folder** as `<plugin name>-<manifest version>.zip`, even when the Code folder is a sub-folder. Older zips in that folder are removed first. A real build names the zip from the `id` in `plugin.json`; up to DWC 3.6 the build writes it into the DWC version's `dist` folder, and it is moved from there.
+5. If the **Build output folder** box has a folder in it, the zip (and any `-srcmap.zip`) goes there **instead** of the plugin version folder: it is moved there at the end of the build, creating the folder if it doesn't exist. Leave it empty to keep the zip in the plugin version folder. Each plugin remembers its own when you press Build; a plugin that hasn't been built yet starts with the default from the Settings page, and **Use Settings** puts that back. If the move fails, the build is reported as failed and the zip is left in the plugin version folder. The folder is relative to the plugin version folder, such as `releases` (inside it) or `../zips` (next to it). A zip of the same name there is replaced; other zips are left alone.
 
 From DWC 3.7, building a stable plugin version (one without `-beta`, `-rc` …) also makes `<plugin name>-<manifest version>-srcmap.zip`. It holds the source maps, for looking up error stack traces, and is put next to the plugin zip. You don't need it to install the plugin.
 
@@ -117,6 +118,7 @@ These are always left out: `__pycache__` and `venv` folders, and `*.log` and `*.
 ## Settings
 
 - **DWC versions folder** and **Plugins folder**: type a full path, or press **Browse…** to pick a folder. Browse shows the folders on the computer running the app, even when the page is open on another computer. Click a folder to open it, or a part of the path at the top to go back up; the filter box narrows the list, and ↑ ↓, Enter and Backspace work from the keyboard. Clear a box, or press Reset to defaults, to go back to the install folder.
+- **Default Build output folder** (optional): the Build output folder a plugin starts with on Create a Plugin until its first build (each plugin then remembers its own): where its finished zip goes instead of the plugin version folder, relative to it, such as `releases` or `../zips`. Full paths, `dist`, `pkg` and `node_modules` aren't accepted. It doesn't need to exist: each build creates it. If it's inside the Code folder it is never zipped. Leave it empty to keep zips in the plugin version folder.
 - **Preferred port**: `0` means the first free port from 17800. A change takes effect the next time the app starts.
 - **Listen on**: either the whole network or this computer only (`127.0.0.1`). There is no login, so on the network setting anyone who can reach the page can run builds and change settings. Only use that setting on a network you trust. Don't choose "this computer only" on a Pi without a screen, or you won't be able to open the page.
 
@@ -130,7 +132,7 @@ The folders, the port, where to listen, the last selections in each tool, the ti
 
 - **Stop** ends the running job in that tool, including the dev server.
 - **Exit**, or Ctrl+C in the terminal, stops everything and shuts the app down.
-- **Closing every tab of the app** also shuts it down, and that stops the DWC dev server too. This happens about 10 seconds after the last tab closes. Reloading a page or moving to another page of the app doesn't count. A tab that disappears without warning, for example after a browser crash, counts as closed after 90 seconds. Until a browser has opened the app for the first time, it keeps running.
+- **Closing every tab of the app** also shuts it down, and that stops the DWC dev server too. This happens about 10 seconds after the last tab closes. Reloading a page or moving to another page of the app doesn't count, and neither does minimizing the browser, switching to another tab or app, or leaving the page alone: there is no time limit. A tab in front that disappears without warning, for example after a browser crash, counts as closed after 90 seconds. A hidden tab never times out, because browsers slow, freeze or discard hidden tabs; so if the browser crashes (or a phone closes the tab in the background) while the app's tab is hidden, the app keeps running until you use Exit or Ctrl+C. Until a browser has opened the app for the first time, it keeps running.
 
 ## Troubleshooting
 

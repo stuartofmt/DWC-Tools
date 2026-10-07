@@ -5,7 +5,7 @@
   </v-alert>
   <v-row dense>
     <v-col cols="12" sm="4">
-      <v-select v-model="dwc" :items="opts.dwc" label="DWC" hide-details @update:model-value="loadFiles(code)"
+      <v-select v-model="dwc" :items="opts.dwc" label="DWC" hide-details @update:model-value="loadFiles(code, output)"
                 no-data-text="No DWC versions: download one with Create DWC Version"></v-select>
     </v-col>
     <v-col cols="12" sm="4">
@@ -13,17 +13,26 @@
                 @update:model-value="syncVersions()"></v-select>
     </v-col>
     <v-col cols="12" sm="4">
-      <v-select v-model="pv" :items="versions" label="Version" hide-details @update:model-value="loadFiles()"></v-select>
+      <v-select v-model="pv" :items="versions" label="Version" hide-details @update:model-value="loadFiles(null, output)"></v-select>
     </v-col>
   </v-row>
   <div class="d-flex align-center ga-2 mt-4">
     <v-combobox v-model="code" :items="found.map(shown)" label="Code folder" autocomplete="off" hide-details class="flex-grow-1"
                 @update:model-value="v => found.map(shown).includes(v) && loadCode()" @blur="loadCode" @keydown.enter="loadCode"></v-combobox>
-    <v-btn prepend-icon="mdi-auto-fix" :disabled="!custom || !found.length" @click="loadFiles(found[0])">Automatic</v-btn>
+    <v-btn prepend-icon="mdi-auto-fix" :disabled="!custom || !found.length" @click="loadFiles(found[0], output)">Automatic</v-btn>
   </div>
   <div class="note">The folder holding <code>plugin.json</code>, inside the plugin version folder (<code>.</code> is that folder itself).</div>
   <div :class="['note', codeNote.kind]">{{ codeNote.text }}</div>
 
+  <div class="d-flex align-center ga-2 mt-4">
+    <v-text-field v-model="output" label="Build output folder, relative to the plugin version folder" placeholder="None: the zip goes in the plugin version folder"
+                  persistent-placeholder autocomplete="off" hide-details class="flex-grow-1" @blur="loadOutput" @keydown.enter="loadOutput"></v-text-field>
+    <v-btn prepend-icon="mdi-cog" :disabled="!pv || output === outputDefault" @click="output = outputDefault; loadOutput()"
+           title="Use the Build output folder from the Settings page">Use Settings</v-btn>
+  </div>
+  <div class="note">Where the finished zip goes, instead of the plugin version folder, such as <code>releases</code> or <code>../zips</code>.
+    The folder is created if needed. Leave it empty to put the zip in the plugin version folder.</div>
+  <div :class="['note', outputNote.kind]">{{ outputNote.text }}</div>
   <job-panel api="/createplugin/api" label="Build" icon="mdi-hammer-wrench" :can-start="canStart" @start="start">
     <v-expansion-panels v-if="pv" multiple>
       <v-expansion-panel :title="`Exclude files (${excluded.length})`">

@@ -3,7 +3,7 @@ mountPage(() => {
     {key: "dwc_versions_dir", label: "DWC versions folder", count: "dwc_count", what: "DWC version folder(s)"},
     {key: "plugins_dir", label: "Plugins folder", count: "plugin_count", what: "plugin(s)"},
   ];
-  const c = ref({}), vals = reactive({dwc_versions_dir: "", plugins_dir: ""}), pp = ref(""), ls = ref("network");
+  const c = ref({}), vals = reactive({dwc_versions_dir: "", plugins_dir: "", output_dir: ""}), pp = ref(""), ls = ref("network");
   const msg = reactive({text:"", kind:""}), br = reactive({open:false, key:"", label:"", start:""});
   const { smAndUp } = Vuetify.useDisplay();
   // The folder in use, which is the install folder until changed, and what was found in it
@@ -13,6 +13,7 @@ mountPage(() => {
     c.value = j;
     vals.dwc_versions_dir = j.dwc_versions_dir;
     vals.plugins_dir = j.plugins_dir;
+    vals.output_dir = j.output_dir;
     pp.value = String(j.preferred_port);
     ls.value = j.listen;
   }
@@ -36,6 +37,6 @@ mountPage(() => {
   (async () => show(await getJSON("/api/config")))();
   return {folders, c, vals, pp, ls, msg, br, smAndUp, inUse, openBrowser, chosen,
           save: () => send({dwc_versions_dir: vals.dwc_versions_dir || "", plugins_dir: vals.plugins_dir || "",
-                            preferred_port: pp.value || "", listen: ls.value}, "Saved"),
-          reset: () => send({dwc_versions_dir: "", plugins_dir: "", preferred_port: 0, listen: "network"}, "Reset to defaults")};
+                            output_dir: vals.output_dir || "", preferred_port: pp.value || "", listen: ls.value}, "Saved"),
+          reset: () => send({dwc_versions_dir: "", plugins_dir: "", output_dir: "", preferred_port: 0, listen: "network"}, "Reset to defaults")};
 });

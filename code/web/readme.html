@@ -69,7 +69,7 @@ If the address doesn't answer 200 within 30 seconds, the log says so and the job
 <h3>Create a Plugin: build or zip a plugin</h3>
 <ol>
   <li>Choose the <b>DWC</b> version, the <b>Plugin</b> and its <b>Version</b>.</li>
-  <li>Check the <b>Code folder</b>: the folder holding <code>plugin.json</code>, relative to the plugin version folder (<code>.</code> is that folder itself).
+  <li>Check the <b>Code folder</b> (and the <b>Build output folder</b>, see the last step): the folder holding <code>plugin.json</code>, relative to the plugin version folder (<code>.</code> is that folder itself).
       It is filled in with the first one found. If a plugin version has <code>plugin.json</code> in more than one place, the others are listed under the box
       and offered in the box's list. Type another folder to use that instead: it is remembered for that plugin version once you press Build.
       <b>Automatic</b> goes back to the one found.</li>
@@ -80,11 +80,20 @@ If the address doesn't answer 200 within 30 seconds, the log says so and the job
           <code>scripts/build-plugin.js</code>. Old <code>dist</code> and <code>pkg</code> folders and any <code>__pycache__</code>, <code>*.pyc</code> and
           <code>*.log</code> files in the plugin version folder are cleared first.</li>
     </ul></li>
-  <li>The result is written in the plugin version folder (the one containing <code>plugin.json</code> or the Code folder) as
+  <li>Unless a Build output folder is set (next step), the result is written in the plugin version folder (the one containing <code>plugin.json</code> or the Code folder) as
       <code>&lt;plugin name&gt;-&lt;manifest version&gt;.zip</code> (the version from <code>plugin.json</code>), and the log ends with its size and path.
-      Any older <code>.zip</code> files in that folder are removed. From DWC 3.7, a build of a stable plugin version (one without
+      Any older <code>.zip</code> files in that folder are removed. A real build names the zip from the <code>id</code> in <code>plugin.json</code>;
+      up to DWC 3.6 the build writes it into the DWC version's <code>dist</code> folder, and it is moved from there. From DWC 3.7, a build of a stable plugin version (one without
       <code>-beta</code>, <code>-rc</code> ...) also makes <code>&lt;plugin name&gt;-&lt;manifest version&gt;-srcmap.zip</code>,
       the source maps kept out of the plugin zip for looking up error stack traces. It is put next to the plugin zip and is not needed to install the plugin.</li>
+  <li>If the <b>Build output folder</b> box has a folder in it, the zip (and any <code>-srcmap.zip</code>) goes there <b>instead</b>: it is moved there
+      at the end of the build, so it is not left in the plugin version folder. Leave the box empty to keep the zip in the plugin version folder.
+      Each plugin remembers its own when you press Build; a plugin that has not been built yet starts with the default from the <a href="/settings">Settings</a> page
+      (<b>Use Settings</b> puts that back).
+      It is relative to the plugin version folder: <code>releases</code> is a folder inside it, <code>../zips</code> a folder next to it (shared by that plugin's versions).
+      A zip of the same name there is replaced and other zips are left alone. The folder is created if it does not exist yet, and the log then ends with the zip's path there.
+      When the folder is inside the Code folder, it is never zipped and is not listed under Exclude files.
+      If the move fails, the build is reported as failed and the zip is left in the plugin version folder.</li>
 </ol>
 
 <h3>Leaving files out</h3>
@@ -114,8 +123,10 @@ and the two folders are kept until you change them. They are all stored in one s
 <ul>
   <li><b>Stop</b> ends the running job in that tool, including the dev server if it is running.</li>
   <li><b>Exit</b> stops everything and shuts the app down. The app also shuts itself down, stopping any job and the DWC dev server, when every one of its tabs has been closed:
-      about 10 seconds after the last tab closes, or up to about 2 minutes if the browser was closed without warning (for example after a crash).
-      Reloading a page or moving to another page of the app does not count as closing it. Until a browser has opened the app, it keeps running.</li>
+      about 10 seconds after the last tab closes. Reloading a page or moving to another page of the app does not count as closing it, and nor does
+      minimizing the browser, switching to another tab or app, or leaving the page alone for a long time: the app has no time limit.
+      If the browser crashes while one of the app's tabs is in front, that tab counts as closed after about 2 minutes. If it crashes while the tab is
+      hidden (or a phone closes it in the background), the app keeps running: use Exit, or Ctrl+C in its terminal. Until a browser has opened the app, it keeps running.</li>
   <li>The Home page shows which tools are currently running. The links to every page and the Exit button (the power icon) are in the bar at the top.</li>
 </ul>
 

@@ -9,9 +9,16 @@
     </v-text-field>
     <div :class="['note', 'mb-4', c[f.count] === null ? 'bad' : '']">{{ inUse(f) }}</div>
   </template>
-  <div class="note mb-6">Folders must already exist. Press Browse to pick one, or enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\DWC</code> on Windows (<code>~</code> is fine too).
+  <v-text-field v-model="vals.output_dir" label="Default Build output folder (optional), relative to the plugin version folder"
+                placeholder="Not set: zips go in the plugin version folder" persistent-placeholder autocomplete="off" hide-details></v-text-field>
+  <div class="note mb-4">{{ !c.output_dir ? "" : "In use: <plugin version folder>/" + c.output_dir }}</div>
+  <div class="note mb-6">The DWC versions and Plugins folders must already exist. Press Browse to pick one, or enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\DWC</code> on Windows (<code>~</code> is fine too).
     Until you change them, both show the folder this app is installed in (the default). Clear a box, or press Reset to defaults, to go back to it.
-    Create DWC Version puts new versions in the first folder; Create a Plugin reads the DWC versions from it and the plugins from the second.</div>
+    Create DWC Version puts new versions in the first folder; Create a Plugin reads the DWC versions from it and the plugins from the second.
+    The Build output folder is where a finished plugin zip goes instead of the plugin version folder, relative to that folder: for example <code>releases</code>
+    (a folder inside each plugin version folder) or <code>../zips</code> (one folder per plugin, next to its version folders). A zip of the same name there is replaced,
+    and the build creates the folder if it does not exist. The one here is the default: Create a Plugin shows it for a plugin that has not been built yet,
+    and each plugin then remembers its own (change it there). Leave it empty to put zips in the plugin version folder.</div>
 
   <v-text-field v-model="pp" label="Preferred port" inputmode="numeric" autocomplete="off" hide-details class="port"></v-text-field>
   <div class="note">The port for this tool's web page. 0 means no preference: the first free port from 17800 is used. Otherwise use a port from 1024 to 65535.

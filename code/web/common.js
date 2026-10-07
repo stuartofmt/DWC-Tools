@@ -10,16 +10,22 @@ async function post(url, body){
   const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body||{})});
   const j = await r.json(); if(!r.ok) ui.error = j.error; return j;
 }
-// Tell the app this tab is open. It shuts itself down once every one of its tabs has been closed.
+// Tell the app this tab is open, and whether it is hidden. It shuts itself down once every one of its tabs has been
+// closed. A hidden tab (minimized, another tab or app in front) may be slowed, frozen or discarded by the browser, so
+// the app does not expect to hear from it until it is shown again; closing it still sends "closing".
 const TAB_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let tabSeq = 0;   // numbers the messages, so the app can ignore one that arrives after a newer one
 function tabPing(closing){
   if(ui.closed) return;
-  const body = JSON.stringify({id: TAB_ID, closing});
-  if(closing) navigator.sendBeacon("/api/tab", new Blob([body], {type: "application/json"}));
+  const body = JSON.stringify({id: TAB_ID, seq: ++tabSeq, closing, hidden: document.visibilityState === "hidden"});
+  // A beacon is still sent while the page is being hidden or closed (and may be frozen straight after)
+  if(closing || document.visibilityState === "hidden") navigator.sendBeacon("/api/tab", new Blob([body], {type: "application/json"}));
   else fetch("/api/tab", {method: "POST", headers: {"Content-Type": "application/json"}, body}).catch(() => {});
 }
 tabPing(false);
 setInterval(() => tabPing(false), 15000);
+addEventListener("visibilitychange", () => tabPing(false));
+addEventListener("freeze", () => tabPing(false));   // Chrome: about to be frozen (it is hidden by then)
 addEventListener("pagehide", () => tabPing(true));
 addEventListener("pageshow", e => { if(e.persisted) tabPing(false); });   // back to a page the browser kept in memory
 

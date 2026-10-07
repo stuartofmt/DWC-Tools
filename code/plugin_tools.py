@@ -28,6 +28,9 @@ Folder layout (both folders can be changed on the Settings page; until then they
   changed per plugin version on the Create a Plugin page.
 Result of CreatePlugin:
   <Plugins folder>/<plugin name>/<plugin version>/<plugin name>-<manifest version>.zip
+  or, when the plugin has a Build output folder, in that folder instead (relative to the plugin version folder,
+  such as releases or ../zips; created if needed). Each plugin remembers its own from its last build; before
+  that, it gets the one from the Settings page.
 
 The folders, the preferred port, where to listen, the remembered CreatePlugin exclusions and the last selections made in
 each tool (they become the defaults next time) are stored together in .plugin_build_exclusions.json,
@@ -53,7 +56,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
-from glob import glob
+from glob import glob, escape as glob_escape
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -366,7 +369,8 @@ save_lock = threading.Lock()
 
 def load_store():
     """Settings file layout: {"format": 2, "config": {...}, "last": {tool: {...}},
-    "exclusions": {dwc: {plugin: {pver: [files]}}}, "code_paths": {plugin: {pver: code folder}}}. A missing or unrecognised file counts as empty."""
+    "exclusions": {dwc: {plugin: {pver: [files]}}}, "code_paths": {plugin: {pver: code folder}},
+    "output_paths": {plugin: Build output folder}}. A missing or unrecognised file counts as empty."""
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as f:
             data = json.load(f)
@@ -382,6 +386,8 @@ def load_store():
         data["last"] = {}
     if not isinstance(data.get("code_paths"), dict):
         data["code_paths"] = {}
+    if not isinstance(data.get("output_paths"), dict):
+        data["output_paths"] = {}
     return data
 
 
@@ -410,6 +416,52 @@ def dwc_versions_dir(data=None):
 
 def plugins_dir(data=None):
     return text_setting("plugins_dir", DEFAULT_PLUGINS, data)
+
+
+def output_dir(data=None):
+    """The Settings page's Build output folder: where finished plugin zips go instead of the plugin version
+    folder, relative to it ("releases", "../zips" ...), for plugins without one of their own (see
+    plugin_output_path). "" = not set: they stay in the plugin version folder."""
+    return text_setting("output_dir", "", data)
+
+
+def plugin_output_path(plugin, data=None):
+    """(Build output folder of a plugin, whether it is its own): the one remembered from its last build on
+    Create a Plugin ("" = none: the plugin version folder), or before its first build, the one from the Settings page."""
+    data = data or load_store()
+    v = data["output_paths"].get(plugin)
+    return (v, True) if isinstance(v, str) else (output_dir(data), False)
+
+
+def clean_output_path(raw):
+    """A Build output folder as typed ("releases", "..\\zips", "./out/" ...) as stored: "releases", "../zips",
+    "out". "" when empty (not set). None if it is not a relative path, is the plugin version folder itself,
+    or goes through a folder that builds clear out or skip (dist, pkg, node_modules)."""
+    if not isinstance(raw, str):
+        return None
+    raw = raw.strip()
+    if not raw:
+        return ""
+    if ":" in raw or raw[0] in "/\\~":
+        return None
+    parts = []
+    for x in re.split(r"[\\/]+", raw):
+        if x == ".." and parts and parts[-1] != "..":
+            parts.pop()
+        elif x and x != ".":
+            parts.append(x)
+    if not parts or any(x in NOT_CODE_DIRS for x in parts):
+        return None
+    return "/".join(parts)
+
+
+OUTPUT_PATH_ERROR = ("enter a folder relative to the plugin version folder, such as releases or ../zips (not a full path, "
+                     "not the plugin version folder itself, and not dist, pkg or node_modules)")
+
+
+def output_folder_for(pvd, rel):
+    """The Build output folder rel (relative, as stored) of the plugin version folder pvd, or None when rel is ""."""
+    return os.path.normpath(os.path.join(pvd, rel)) if rel else None
 
 
 def listen(data=None):
@@ -472,12 +524,13 @@ def saved_code_path(plugin, pver):
     return v if isinstance(v, str) else None
 
 
-def remember_plugin_run(dwc, plugin, pver, files, custom_code):
+def remember_plugin_run(dwc, plugin, pver, files, custom_code, output):
     """CreatePlugin: remember the exclusions for this combination, the Code folder when it was changed from the
-    one found automatically (custom_code; None = automatic), and the selections themselves.
-    Returns an error message, or None."""
+    one found automatically (custom_code; None = automatic), the plugin's Build output folder (output; "" = none:
+    the plugin version folder) and the selections themselves. Returns an error message, or None."""
     with save_lock:
         data = load_store()
+        data["output_paths"][plugin] = output
         codes = data["code_paths"]
         if not isinstance(codes.get(plugin), dict):
             codes[plugin] = {}
@@ -580,14 +633,16 @@ def plugin_versions(name, base=None):
                    if code_path_for(name, d, base) is not None), key=version_key, reverse=True)
 
 
-def code_files(plugin, pver, code, limit=CODE_FILES_LIMIT):
+def code_files(plugin, pver, code, output_rel, limit=CODE_FILES_LIMIT):
     """Files under the plugin's Code folder (code, relative to the plugin version folder; paths relative to it)
-    that could be excluded. Things the default exclusions already remove are left out of the list.
-    Returns (files, truncated): at most `limit` files, and whether there were more than that."""
+    that could be excluded. Things the default exclusions already remove, and the Build output folder
+    (output_rel), are left out of the list. Returns (files, truncated): at most `limit` files, and whether
+    there were more than that."""
     code_dir = code_dir_for(plugin, pver, code)
+    output = output_folder_for(os.path.join(plugins_dir(), plugin, pver), output_rel)
     out = []
     for dirpath, dirnames, filenames in os.walk(code_dir):
-        dirnames[:] = [d for d in dirnames if not skip_dir(d)]
+        dirnames[:] = [d for d in dirnames if not skip_dir(d) and os.path.normpath(os.path.join(dirpath, d)) != output]
         for f in filenames:
             rel = os.path.relpath(os.path.join(dirpath, f), code_dir).replace(os.sep, "/")
             if f.endswith(ALWAYS_SKIP_SUFFIXES) or is_old_zip(code == "", rel):
@@ -599,9 +654,10 @@ def code_files(plugin, pver, code, limit=CODE_FILES_LIMIT):
     return sorted(out, key=str.lower), False
 
 
-def zip_folder(job, lines, out_zip, code_dir, exclude):
+def zip_folder(job, lines, out_zip, code_dir, exclude, output=None):
     """Zip the contents of code_dir into out_zip (paths inside the zip start at code_dir), leaving out
-    __pycache__ and venv folders, *.log and *.pyc files, and the files in `exclude`.
+    __pycache__ and venv folders, *.log and *.pyc files, the files in `exclude` and the Build output folder
+    (`output`, which holds earlier zips when it is inside code_dir).
     Done with Python's zipfile so that no zip program is needed (Windows has none).
     Returns the number of files added, or None if the job was stopped. A partial or empty zip is never left behind."""
     skip = set(exclude)
@@ -612,7 +668,8 @@ def zip_folder(job, lines, out_zip, code_dir, exclude):
         # strict_timestamps=False: files dated before 1980 are accepted instead of raising an error
         with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
             for dirpath, dirnames, filenames in os.walk(code_dir):
-                dirnames[:] = sorted(d for d in dirnames if not skip_dir(d))
+                dirnames[:] = sorted(d for d in dirnames
+                                     if not skip_dir(d) and os.path.normpath(os.path.join(dirpath, d)) != output)
                 rel_dir = os.path.relpath(dirpath, code_dir).replace(os.sep, "/")
                 if rel_dir != ".":
                     z.write(dirpath, rel_dir + "/")   # a folder entry, as zip -r makes
@@ -699,7 +756,24 @@ def clean_bloat(root):
 
 
 # ---------- CreatePlugin: the job ----------
-def run_plugin_job(lines, dwc_version, plugin, pver, code, exclude):
+def built_zips(code_dir, dwc_dir, manifest, started):
+    """The zips a DWC plugin build made. DWC 3.7 and later write <id>-<version>.zip (and maybe
+    <id>-<version>-srcmap.zip) into the Code folder, which held no zips before the build. Older versions write
+    <id>-<version>.zip (<id>-<DWC version>.zip for version "auto") into the DWC version's dist folder, which may
+    hold zips of earlier builds: only those written since the build started count."""
+    found = sorted(glob(os.path.join(code_dir, "*.zip")))
+    plugin_id = str(manifest.get("id") or "")
+    if plugin_id:
+        for z in sorted(glob(os.path.join(glob_escape(os.path.join(dwc_dir, "dist")), glob_escape(plugin_id) + "-*.zip"))):
+            try:
+                if os.path.getmtime(z) >= started - 2:   # a little slack for coarse file times
+                    found.append(z)
+            except OSError:
+                pass
+    return found
+
+
+def run_plugin_job(lines, dwc_version, plugin, pver, code, exclude, output_rel):
     job = plugin_job
     dwc_dir = os.path.join(dwc_versions_dir(), dwc_version)
     pvd = os.path.join(plugins_dir(), plugin, pver)  # plugin version dir
@@ -725,7 +799,7 @@ def run_plugin_job(lines, dwc_version, plugin, pver, code, exclude):
                 lines.append("Also excluding: " + ", ".join(exclude))
             rm_zips(pvd)
             lines.append(f"$ zip {out_zip}   (made by this app, no zip program needed)")
-            count = zip_folder(job, lines, out_zip, code_dir, exclude)
+            count = zip_folder(job, lines, out_zip, code_dir, exclude, output_folder_for(pvd, output_rel))
             if count == 0:
                 lines.append("Nothing to zip: every file was left out")
                 if os.path.exists(out_zip):
@@ -746,27 +820,50 @@ def run_plugin_job(lines, dwc_version, plugin, pver, code, exclude):
                     lines.append("Kept out of this build (restored afterwards): " + ", ".join(moved))
                 rm_zips(pvd)
                 rm_zips(code_dir)
+                started = time.time()
                 # build-plugin.js must exist in the DWC version's ./scripts folder
                 code = job.step(lines, ["node", "./scripts/build-plugin.js", code_dir], dwc_dir)
                 if code == 0:
-                    built = os.path.join(code_dir, zip_file)
-                    if os.path.isfile(built):
+                    built = built_zips(code_dir, dwc_dir, manifest, started)
+                    main = [z for z in built if not z.endswith("-srcmap.zip")]
+                    if main:
                         # Move every zip the build made (from DWC 3.7 also <id>-<version>-srcmap.zip, the source
-                        # maps of a stable version) next to the result. Code held no zips before the build.
-                        # When Code is the plugin version folder itself, the build already put them there.
-                        if os.path.normpath(code_dir) != os.path.normpath(pvd):
-                            for z in sorted(glob(os.path.join(code_dir, "*.zip"))):
-                                dst = os.path.join(pvd, os.path.basename(z))
+                        # maps of a stable version) to the plugin version folder. When Code is the plugin version
+                        # folder itself, a DWC 3.7 build already put them there.
+                        for z in built:
+                            dst = os.path.join(pvd, os.path.basename(z))
+                            if os.path.normpath(z) != os.path.normpath(dst):
                                 lines.append(f"Move {z} to {dst}")
                                 shutil.move(z, dst)
+                        out_zip = os.path.join(pvd, os.path.basename(main[0]))
+                        zip_file = os.path.basename(out_zip)
                         ok = True
                     else:
-                        lines.append(f"Build finished but {built} was not created")
+                        lines.append(f"Build finished but no zip was found in {code_dir} or {os.path.join(dwc_dir, 'dist')}")
             finally:
                 if stash:
                     restore_files(code_dir, moved, stash, lines)
                 rm_build_dirs(code_dir)
 
+        dest = output_folder_for(pvd, output_rel)
+        if ok and dest:
+            # Move every zip this build made (the plugin zip, and from DWC 3.7 maybe its -srcmap.zip; the plugin
+            # version folder held no zips before the build) to the Build output folder, making it if needed:
+            # that is the only place they end up. Only zips of the same name are replaced there, as the folder
+            # may be shared by many plugins.
+            try:
+                os.makedirs(dest, exist_ok=True)
+                for z in sorted(glob(os.path.join(glob_escape(pvd), "*.zip"))):
+                    dst = os.path.join(dest, os.path.basename(z))
+                    lines.append(f"Move {z} to {dst}")
+                    if os.path.isfile(dst):
+                        os.remove(dst)   # so the move replaces it on Windows too
+                    shutil.move(z, dst)
+                out_zip = os.path.join(dest, zip_file)
+            except OSError as e:
+                lines.append(f"Could not move the zip to the Build output folder {dest}: {e} "
+                             f"(what was not moved is still in {pvd})")
+                ok = False
         if ok and os.path.isfile(out_zip):
             st = os.stat(out_zip)
             when = time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))
@@ -912,12 +1009,17 @@ def api_exit():
 
 
 # ---------- stop when the last browser tab is closed ----------
-# Every page posts to /api/tab when it opens, every TAB_PING seconds while open, and once more when it closes.
-# When no tab is left, the app shuts down after CLOSE_GRACE seconds (time for a reload or a move to another page
-# to check in again). Nothing happens until the first tab checks in, so the app keeps running until a browser opens it.
-TAB_TIMEOUT = 90   # seconds without a ping before a tab counts as closed (browsers slow background tabs to about one a minute)
+# Every page posts to /api/tab when it opens, every 15 seconds while open, whenever it is hidden or shown again,
+# and once more when it closes. When no tab is left, the app shuts down after CLOSE_GRACE seconds (time for a
+# reload or a move to another page to check in again). Nothing happens until the first tab checks in, so the app
+# keeps running until a browser opens it.
+# Only a visible tab that stops checking in for TAB_TIMEOUT seconds counts as closed (a browser that crashed or was
+# killed). A hidden tab (minimized, another tab or app in front) never times out: browsers slow, freeze or discard
+# hidden pages, so its silence says nothing. It still counts as closed when it is closed, as closing sends a message.
+TAB_TIMEOUT = 90
 CLOSE_GRACE = 10
-tabs = {}          # tab id -> time.monotonic() of its last ping
+tabs = {}          # tab id -> {"seen": time.monotonic() of its last message, "hidden": bool, "seq": its number}
+closed_tabs = {}   # tab id -> number of its closing message, so a message sent before it but arriving later is ignored
 tabs_lock = threading.Lock()
 empty_since = None   # when the last tab went; None while a tab is open or before any has checked in
 
@@ -926,16 +1028,23 @@ empty_since = None   # when the last tab went; None while a tab is open or befor
 def api_tab():
     global empty_since
     d = request.get_json(silent=True) or {}
-    tab = d.get("id")
+    tab, seq = d.get("id"), d.get("seq", 0)
     if not isinstance(tab, str) or not 0 < len(tab) <= 64:
         return jsonify(error="Invalid tab id"), 400
+    if not isinstance(seq, int) or isinstance(seq, bool):
+        return jsonify(error="Invalid tab message number"), 400
     with tabs_lock:
+        old = tabs.get(tab)
+        if (old and seq < old["seq"]) or seq <= closed_tabs.get(tab, -1):
+            return jsonify(ok=True)   # overtaken by a newer message from the same tab (it says hidden or closing)
         if d.get("closing"):
             tabs.pop(tab, None)
+            closed_tabs[tab] = seq
             if not tabs:
                 empty_since = time.monotonic()
         else:
-            tabs[tab] = time.monotonic()
+            closed_tabs.pop(tab, None)   # back again (from the browser's back/forward cache)
+            tabs[tab] = {"seen": time.monotonic(), "hidden": bool(d.get("hidden")), "seq": seq}
             empty_since = None
     return jsonify(ok=True)
 
@@ -947,8 +1056,8 @@ def watch_tabs():
         time.sleep(1)
         now = time.monotonic()
         with tabs_lock:
-            for tab, seen in list(tabs.items()):
-                if now - seen > TAB_TIMEOUT:
+            for tab, t in list(tabs.items()):
+                if not t["hidden"] and now - t["seen"] > TAB_TIMEOUT:
                     del tabs[tab]
                     if not tabs:
                         empty_since = now
@@ -965,6 +1074,7 @@ def config_view():
         "dwc_versions_dir": d, "plugins_dir": p,
         "defaults": {"dwc_versions_dir": DEFAULT_DWC_VERSIONS, "plugins_dir": DEFAULT_PLUGINS,
                      "listen": DEFAULT_LISTEN},
+        "output_dir": output_dir(data),
         "preferred_port": preferred_port(data),
         "listen": listen(data),
         "url": f"http://{HOST}:{PORT}/" if PORT else "",   # where this tool is listening right now
@@ -1039,6 +1149,11 @@ def api_config_set():
             return jsonify(error=f"{label}: '{path}' is not an existing folder"), 400
         if path != os.path.normpath(DEFAULTS[key]):
             new[key] = path   # the default is simply not stored, so it keeps following the install folder
+    out = clean_output_path(d.get("output_dir", ""))
+    if out is None:
+        return jsonify(error="Build output folder: " + OUTPUT_PATH_ERROR), 400
+    if out:   # empty means "not set"; the folder need not exist: each build creates it
+        new["output_dir"] = out
     raw_port = d.get("preferred_port", 0)
     if isinstance(raw_port, str):
         raw_port = raw_port.strip() or "0"
@@ -1083,11 +1198,25 @@ def plugin_files():
     dwc = request.args.get("dwc", "")
     plugin = request.args.get("plugin", "")
     pver = request.args.get("version", "")
-    out = {"files": [], "selected": [], "truncated": False, "code": None, "found": [], "custom": False}
+    out = {"files": [], "selected": [], "truncated": False, "code": None, "found": [], "custom": False,
+           "output": "", "output_folder": None, "output_default": output_dir(), "output_saved": None}
     if plugin not in subdirs(plugins_dir()) or pver not in plugin_versions(plugin):
         return jsonify(out)
-    # The Code folder: as typed on the page (code=...), or else the remembered / automatic one
     pvd = os.path.join(plugins_dir(), plugin, pver)
+    # The Build output folder: as typed on the page (output=...), or else the plugin's own / the Settings one
+    raw_out = request.args.get("output")
+    saved, own = plugin_output_path(plugin)
+    out["output_saved"] = saved if own else None   # None: not built yet
+    if raw_out is None:
+        out["output"] = saved
+    else:
+        rel = clean_output_path(raw_out)
+        if rel is None:
+            out["output_error"] = OUTPUT_PATH_ERROR
+            rel = ""
+        out["output"] = rel
+    out["output_folder"] = output_folder_for(pvd, out["output"])
+    # The Code folder: as typed on the page (code=...), or else the remembered / automatic one
     found = find_code_paths(pvd)
     raw = request.args.get("code")
     code = code_path_for(plugin, pver) if raw is None else clean_code_path(raw)
@@ -1099,7 +1228,7 @@ def plugin_files():
     if not has_manifest(pvd, code):
         out["error"] = "There is no plugin.json in that folder"
         return jsonify(out)
-    listed, truncated = code_files(plugin, pver, code)
+    listed, truncated = code_files(plugin, pver, code, out["output"])
     # Only pre-tick remembered files that still exist
     present = set(listed)
     selected = [f for f in saved_excludes(dwc, plugin, pver) if f in present]
@@ -1125,18 +1254,22 @@ def plugin_start():
         return jsonify(error="Code folder: choose a folder inside the plugin version folder that holds plugin.json"), 400
     found = find_code_paths(pvd)
     custom_code = None if found and code == found[0] else code
+    output_rel = clean_output_path(d.get("output", ""))
+    if output_rel is None:
+        return jsonify(error="Build output folder: " + OUTPUT_PATH_ERROR), 400
     if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
         return jsonify(error="Invalid exclusion list"), 400
-    if not set(exclude) <= set(code_files(plugin, pver, code)[0]):
+    if not set(exclude) <= set(code_files(plugin, pver, code, output_rel)[0]):
         return jsonify(error="An excluded file does not exist in the Code folder"), 400
     lines = plugin_job.begin()
     if lines is None:
         return jsonify(error="Already running - stop it first"), 409
-    lines.append(f"Build: DWC {dwc}, plugin {plugin}, plugin version {pver}, Code folder {code or '.'}")
-    err = remember_plugin_run(dwc, plugin, pver, exclude, custom_code)
+    lines.append(f"Build: DWC {dwc}, plugin {plugin}, plugin version {pver}, Code folder {code or '.'}"
+                 + (f", Build output folder {output_rel}" if output_rel else ""))
+    err = remember_plugin_run(dwc, plugin, pver, exclude, custom_code, output_rel)
     if err:
         lines.append(f"Could not remember these selections: {err}")
-    threading.Thread(target=run_plugin_job, args=(lines, dwc, plugin, pver, code, exclude), daemon=True).start()
+    threading.Thread(target=run_plugin_job, args=(lines, dwc, plugin, pver, code, exclude, output_rel), daemon=True).start()
     return jsonify(ok=True)
 
 
