@@ -1,16 +1,35 @@
-
-<div class="nav"><a href="/">&larr; Home</a> &middot; <a href="/prepare">Prepare</a> &middot; <a href="/readme">Instructions</a></div>
-<h2>Make Zip</h2>
-<div class="field" id="picker"></div>
-<button id="go">Make Zip</button> <button id="stop">Stop</button>
-<button id="exit">Exit</button> <button onclick="location.href='/settings'">Settings</button>
-<span id="status"></span>
-<details id="exbox" hidden>
-  <summary id="excount">Exclude files (0)</summary>
-  <div id="exlist"></div>
-</details>
-<details id="zipbox" hidden>
-  <summary id="zipcount">Zips in dist</summary>
-  <table class="zips"><tbody id="ziplist"></tbody></table>
-</details>
-<div id="log"></div>
+<page-frame title="Make Zip">
+  <project-picker ref="picker" @project="show"></project-picker>
+  <job-panel api="/makezip/api" label="Make Zip" icon="mdi-folder-zip" :can-start="!!(info && info.requirements)"
+             @start="start" @finished="$refs.picker.refresh()">
+    <v-expansion-panels v-if="info" multiple>
+      <v-expansion-panel :title="`Exclude files (${excluded.length})`">
+        <v-expansion-panel-text>
+          <div class="note mb-2">Ticked files are left out of the zip. The ticks are remembered for this project when you press Make Zip.
+            Nothing is ticked until you tick it: check for files that belong to this computer, such as a settings file.
+            Always left out: venv, __pycache__ and .git folders, *.pyc files.</div>
+          <div v-if="info.files_truncated" class="note bad">Only the first {{ info.files.length }} files are listed.</div>
+          <v-virtual-scroll :items="info.files" max-height="16rem" class="exfiles">
+            <template #default="{ item }">
+              <v-checkbox v-model="excluded" :value="item" :disabled="needed.has(item)" density="compact" hide-details
+                          :label="needed.has(item) ? item + '  (needed by install.py)' : item"></v-checkbox>
+            </template>
+          </v-virtual-scroll>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+      <v-expansion-panel v-if="info.zips.length" :title="`Zips in dist (${info.zips.length})`">
+        <v-expansion-panel-text>
+          <v-table density="compact" class="zips">
+            <tbody>
+              <tr v-for="z in info.zips" :key="z.name">
+                <td><a :href="download(z)"><v-icon icon="mdi-download" size="small" class="mr-1"></v-icon>{{ z.name }}</a></td>
+                <td class="n">{{ (z.size / 1024).toFixed(1) }} KB</td>
+                <td>{{ z.when }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
+  </job-panel>
+</page-frame>

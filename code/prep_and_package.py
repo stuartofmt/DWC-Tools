@@ -1223,11 +1223,14 @@ def api_bye():
 
 @app.get("/api/browse")
 def api_browse():
-    """Sub-folders of a folder, each marked if it is a project. With no path: the folder of
-    the last project used, else the projects folder from Settings."""
+    """Sub-folders of a folder, each marked if it is a project, and the folders above it (crumbs, from the top).
+    With no path: the folder of the last project used, else the Startup Folder from Settings. With exact
+    (for suggestions while a path is typed), a path that is not a folder gives no folders instead."""
     data = load_store()
     raw = request.args.get("path", "")
     path = full_path(raw) if raw else None
+    if request.args.get("exact") and (path is None or not os.path.isdir(path)):
+        return jsonify(path="", dirs=[], is_project=False, crumbs=[], sep=os.sep)
     if path is None or not os.path.isdir(path):
         last = data["project"]
         path = os.path.dirname(last) if last and os.path.isdir(last) else projects_dir(data)
@@ -1235,8 +1238,15 @@ def api_browse():
             path = DEFAULT_PROJECTS
     dirs = [{"name": d, "path": os.path.join(path, d), "is_project": is_project(os.path.join(path, d))}
             for d in subdirs(path)]
-    parent = os.path.dirname(path)
-    return jsonify(path=path, parent=parent if parent != path else "", dirs=dirs, is_project=is_project(path))
+    crumbs, p = [], path
+    while True:
+        crumbs.append({"name": os.path.basename(p) or p, "path": p})   # the top (/ or C:\) has no basename
+        up = os.path.dirname(p)
+        if up == p:
+            break
+        p = up
+    return jsonify(path=path, dirs=dirs, is_project=is_project(path),
+                   crumbs=crumbs[::-1], sep=os.sep)
 
 
 @app.get("/api/project")
@@ -1321,13 +1331,13 @@ def api_config_set():
     new = {}
     raw = d.get("projects_dir", "")
     if not isinstance(raw, str):
-        return jsonify(error="Projects folder: invalid value"), 400
+        return jsonify(error="Startup Folder: invalid value"), 400
     if raw.strip():   # empty means "use the default"
         path = full_path(raw)
         if path is None:
-            return jsonify(error="Projects folder: enter a full path, such as /home/pi or C:\\Projects"), 400
+            return jsonify(error="Startup Folder: enter a full path, such as /home/pi or C:\\Projects"), 400
         if not os.path.isdir(path):
-            return jsonify(error=f"Projects folder: '{path}' is not an existing folder"), 400
+            return jsonify(error=f"Startup Folder: '{path}' is not an existing folder"), 400
         if path != os.path.normpath(DEFAULT_PROJECTS):
             new["projects_dir"] = path   # the default is simply not stored
     raw_port = d.get("preferred_port", 0)
@@ -1410,8 +1420,15 @@ def prepare_start():
 
 # ---------- pages ----------
 # The pages' HTML, CSS and JS live in the web folder next to this script. base.html is the frame every page
-# shares (style.css and common.js go into it); each page is <name>.html for its body plus <name>.js if it has a script.
+# shares (style.css and common.js go into it); each page is <name>.html, its Vue template, plus <name>.js if it has a script.
+# Vue and Vuetify are in web/vendor (fetched by update_vendor.py), so the pages work without internet access.
 WEB_DIR = os.path.join(SCRIPT_DIR, "web")
+VENDOR_DIR = os.path.join(WEB_DIR, "vendor")
+
+
+@app.get("/vendor/<path:name>")
+def vendor_file(name):
+    return send_from_directory(VENDOR_DIR, name, max_age=86400)
 
 
 def web_file(name):

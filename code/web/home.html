@@ -1,12 +1,17 @@
-
-<h2>Prep and Package</h2>
-<div class="cards">
-  <a class="card" href="/prepare"><b>Prepare</b>
-    <span>Make a project's requirements.txt from its imports, create its venv and install into it</span><em id="s-prepare"></em></a>
-  <a class="card" href="/makezip"><b>Make Zip</b>
-    <span>Build a project's release zip, ready to copy to another computer</span><em id="s-makezip"></em></a>
-</div>
-<p class="note" id="lastproj"></p>
-<button onclick="location.href='/settings'">Settings</button>
-<button onclick="location.href='/readme'">Instructions</button>
-<button id="exit">Exit</button>
+<page-frame title="Prep and Package">
+  <v-row>
+    <v-col cols="12" sm="6">
+      <v-card href="/prepare" variant="outlined" class="h-100" prepend-icon="mdi-package-variant-closed" title="Prepare"
+              text="Make a project's requirements.txt from its imports, create its venv and install into it">
+        <template #append><v-chip v-if="running.prepare" color="primary" size="small">running</v-chip></template>
+      </v-card>
+    </v-col>
+    <v-col cols="12" sm="6">
+      <v-card href="/makezip" variant="outlined" class="h-100" prepend-icon="mdi-folder-zip" title="Make Zip"
+              text="Build a project's release zip, ready to copy to another computer">
+        <template #append><v-chip v-if="running.makezip" color="primary" size="small">running</v-chip></template>
+      </v-card>
+    </v-col>
+  </v-row>
+  <p class="note mt-4">{{ project }}</p>
+</page-frame>

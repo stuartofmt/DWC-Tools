@@ -32,7 +32,7 @@ venv\Scripts\python code\prep_and_package.py
 
 The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17900. (plugin_tool uses ports from 17800, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
 
-Keep the `web` folder next to `prep_and_package.py`.
+Keep the `web` folder next to `prep_and_package.py`. The pages are built with Vue 3 and Vuetify 4, which are kept in `code/web/vendor` (they go into the release zip, so the app needs no internet access and no Node.js). To update them, change the versions at the top of `update_vendor.py` and run `python3 update_vendor.py`; run it again after using a new `mdi-...` icon in the pages, as only the icons in use are kept.
 
 ## What a project looks like
 
@@ -123,7 +123,7 @@ When the install succeeds, it starts the program straight away with `run.sh` (Wi
 
 ## Settings
 
-- **Projects folder**: where Browse starts when no project has been chosen yet. The default is your home folder.
+- **Startup Folder**: where Browse starts when no project has been chosen yet. The default is your home folder.
 - **Preferred port**: `0` means the first free port from 17900. A change takes effect the next time the app starts.
 - **Listen on**: either the whole network or this computer only (`127.0.0.1`). There is no login, so on the network setting anyone who can reach the page can prepare projects and make zips. Only use that setting on a network you trust.
 

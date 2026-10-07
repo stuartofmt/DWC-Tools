@@ -1,13 +1,10 @@
-
-<div class="nav"><a href="/">&larr; Home</a> &middot; <a href="/makezip">Make Zip</a> &middot; <a href="/readme">Instructions</a></div>
-<h2>Prepare</h2>
-<div class="field" id="picker"></div>
-<p class="note">Prepare works on the project folder itself. It adds any packages the code imports that are missing from
-<code>requirements.txt</code> (making <code>code/requirements.txt</code> if there is none), creates the project's <code>venv</code>,
-installs <code>requirements.txt</code> into it, checks that each package can be imported, and adds a launcher
-(<code>run.sh</code>, or <code>run.bat</code> on Windows) if there is none. Run it again after changing the imports.</p>
-<p class="note" id="state"></p>
-<button id="go">Prepare</button> <button id="stop">Stop</button>
-<button id="exit">Exit</button> <button onclick="location.href='/settings'">Settings</button>
-<span id="status"></span>
-<div id="log"></div>
+<page-frame title="Prepare">
+  <project-picker ref="picker" @project="info = $event"></project-picker>
+  <p class="note mt-4">Prepare works on the project folder itself. It adds any packages the code imports that are missing from
+  <code>requirements.txt</code> (making <code>code/requirements.txt</code> if there is none), creates the project's <code>venv</code>,
+  installs <code>requirements.txt</code> into it, checks that each package can be imported, and adds a launcher
+  (<code>run.sh</code>, or <code>run.bat</code> on Windows) if there is none. Run it again after changing the imports.</p>
+  <p class="note">{{ state }}</p>
+  <job-panel api="/prepare/api" label="Prepare" icon="mdi-package-variant-closed" :can-start="!!info"
+             @start="start" @finished="$refs.picker.refresh()"></job-panel>
+</page-frame>

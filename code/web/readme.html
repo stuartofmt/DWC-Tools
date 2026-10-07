@@ -1,9 +1,8 @@
 
-<div class="nav"><a href="/">&larr; Home</a></div>
+<page-frame title="Instructions">
 <div class="doc">
-<h2>Instructions</h2>
-<p class="firstrun" id="first-run" hidden>Welcome. No settings have been saved yet. Browse starts in <code id="cur-projects">...</code>:
-change that on the <a href="/settings">Settings</a> page if your projects live somewhere else.</p>
+<v-alert v-if="c.first_run" type="info" variant="tonal" class="mb-4">Welcome. No settings have been saved yet. Browse starts in <code>{{ c.projects_dir }}</code>:
+change that on the <a href="/settings">Settings</a> page if your projects live somewhere else.</v-alert>
 <p>These tools prepare and release standalone Python programs, on a Raspberry Pi or a Windows PC. There are two, normally used in this order:</p>
 <ul>
   <li><b>Prepare</b> gets the project folder ready: it works out <code>requirements.txt</code> from the program's imports, creates the project's
@@ -18,7 +17,7 @@ __SETUP__
 <p>The app prints the address to use when it starts, and on a desktop session your browser opens there by itself.
 By default it listens on this computer's network address (so <code>localhost</code> will not work) on the <b>preferred port</b> from the
 <a href="/settings">Settings</a> page if that port is free, or otherwise on the first free port from 17900.
-This tool is currently running at <code id="cur-url">...</code>.
+This tool is currently running at <code>{{ c.url || "..." }}</code>.
 There is no login, so anyone who can reach the page can prepare projects and make zips: only use it on a network you trust, or set <b>Listen on</b> to
 <b>This computer only</b> on the Settings page.</p>
 
@@ -37,9 +36,12 @@ makes the rest.</p>
 
 <h3>Choosing the project</h3>
 <ul>
-  <li>Type the full path of the project folder, or pick one of the recent projects the box offers, or</li>
-  <li>press <b>Browse…</b>. Click a folder to open it and <b>↑ Up</b> to go to its parent. Project folders are shown in bold with a <b>project</b> tag.
-      Press <b>Select</b> next to one, or <b>Use this folder</b> for the folder being shown.</li>
+  <li>Type the full path of the project folder, or pick one of the recent projects the box offers. While you type, the box suggests the folders
+      that fit (project folders have a <b>project</b> tag): pick one to carry on into it, or press <b>Tab</b> to complete the name. Or</li>
+  <li>press <b>Browse…</b> (on a narrow screen, the folder button next to the box). Click a folder to open it, or a part of the path at the top
+      to go back up to it. Project folders are shown in bold with a <b>project</b> tag: press <b>Select</b> next to one, or <b>Use this folder</b>
+      for the folder being shown. Type in the filter box to show only the folders whose names contain that text. From the keyboard: ↑ and ↓ move, Enter opens a folder (or selects a project) and Backspace goes up.
+      The recent projects are at the bottom, one click away.</li>
 </ul>
 <p>The project you choose in one tool is also chosen in the other, and comes back next time. Browse starts next to it.</p>
 
@@ -98,8 +100,8 @@ Running it again updates the program files and recreates the venv.</p>
 
 <h3>What is remembered</h3>
 <p>The settings, the current project, the recent projects and each project's options are stored in one file, currently
-<code id="cur-file">...</code>. __HIDDEN_NOTE__ It is plain text, so you can back it up or delete it. Deleting it resets everything to the defaults.
-Venvs are made with <code id="cur-python">...</code>, the Python outside any venv that this app's Python comes from.</p>
+<code>{{ c.settings_file || "..." }}</code>. __HIDDEN_NOTE__ It is plain text, so you can back it up or delete it. Deleting it resets everything to the defaults.
+Venvs are made with <code>{{ c.python || "..." }}</code>, the Python outside any venv that this app's Python comes from.</p>
 
 <h3>Stop and Exit</h3>
 <ul>
@@ -126,3 +128,4 @@ Venvs are made with <code id="cur-python">...</code>, the Python outside any ven
   <tr><td>"Refused: this request came from another web page"</td><td>Open the tool from the address the app printed at start-up, not from inside another web page or a saved copy of it</td></tr>
 </table>
 </div>
+</page-frame>

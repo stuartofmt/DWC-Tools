@@ -1,11 +1,9 @@
-const API = "/prepare/api";
-const picker = setupPicker(info => {
-  $("state").textContent = !info ? "" :
-    "Now: " + [info.requirements ? info.requirements : "no requirements.txt yet",
-               info.venv ? "venv made" : "no venv yet",
-               info.launcher ? info.launcher : "no launcher"].join(", ");
+mountPage(() => {
+  const API = "/prepare/api", info = ref(null);
+  const state = computed(() => !info.value ? "" :
+    "Now: " + [info.value.requirements ? info.value.requirements : "no requirements.txt yet",
+               info.value.venv ? "venv made" : "no venv yet",
+               info.value.launcher ? info.value.launcher : "no launcher"].join(", "));
+  // the job panel shows the new state once the run ends (@finished)
+  return {info, state, start: () => post(`${API}/start`, {project: info.value.path})};
 });
-$("go").onclick = () => post(`${API}/start`, {project: picker.current().path});
-$("stop").onclick = () => post(`${API}/stop`);
-wireExit();
-startPolling(API, () => !!picker.current(), () => picker.refresh());   // show the new state once the run ends

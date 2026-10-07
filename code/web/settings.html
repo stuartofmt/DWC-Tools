@@ -1,30 +1,29 @@
-
-<div class="nav"><a href="/">&larr; Home</a> &middot; <a href="/readme">Instructions</a></div>
-<h2>Settings</h2>
-<div class="field">
-  <label for="pd"><b>Projects folder</b></label>
-  <input id="pd" autocomplete="off">
-  <div class="note" id="pdn"></div>
-  <div class="note">Where Browse starts when no project has been chosen yet (after that it starts next to the last project).
+<page-frame title="Settings">
+  <v-text-field v-model="pd" label="Startup Folder" :placeholder="c.defaults && c.defaults.projects_dir" persistent-placeholder
+                autocomplete="off" hide-details></v-text-field>
+  <div :class="['note', c.projects_dir_found ? '' : 'bad']">{{ c.projects_dir ? `In use: ${c.projects_dir}` + (c.projects_dir_found ? "" : " - folder not found") : "" }}</div>
+  <div class="note mb-6">Where Browse starts when no project has been chosen yet (after that it starts next to the last project).
   It must already exist. Enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\Projects</code> on Windows (<code>~</code> is fine too).
   Clear the box, or press Reset to defaults, to go back to your home folder.</div>
-</div>
-<div class="field">
-  <label for="pp"><b>Preferred port</b> for this tool's web page</label>
-  <input id="pp" inputmode="numeric" autocomplete="off">
-  <div class="note" id="ppd"></div>
-  <div class="note" id="ppn"></div>
-</div>
-<div class="field">
-  <label for="ls"><b>Listen on</b></label>
-  <select id="ls">
-    <option value="network">The whole network: any computer on it can open this page</option>
-    <option value="local">This computer only (127.0.0.1)</option>
-  </select>
+
+  <v-text-field v-model="pp" label="Preferred port" inputmode="numeric" autocomplete="off"
+                hide-details class="port"></v-text-field>
+  <div class="note" v-if="c.defaults">The port for this tool's web page. 0 means no preference: the first free port from {{ c.defaults.start_port }} is used. Otherwise use a port from 1024 to 65535.
+    If your preferred port is already in use, the first free port from {{ c.defaults.start_port }} is used instead. A change takes effect the next time the app starts.</div>
+  <div class="note mb-6">{{ c.url ? "This tool is running at " + c.url : "" }}</div>
+
+  <v-select v-model="ls" label="Listen on" hide-details :items="[
+      {value: 'network', title: 'The whole network: any computer on it can open this page'},
+      {value: 'local', title: 'This computer only (127.0.0.1)'}]"></v-select>
   <div class="note">There is no login, so on the whole network anyone who can reach the page can run the project scripts and change these settings.
   Choose this computer only if you use the app from this computer's own browser. Do not choose it on a Pi without a screen:
   you would no longer be able to open the page from another computer. A change takes effect the next time the app starts.</div>
-</div>
-<button id="save">Save</button> <button id="reset">Reset to defaults</button> <span id="msg"></span>
-<p class="note" id="python"></p>
-<p class="note" id="file"></p>
+
+  <div class="d-flex align-center ga-2 flex-wrap my-6">
+    <v-btn color="primary" prepend-icon="mdi-content-save" @click="save">Save</v-btn>
+    <v-btn prepend-icon="mdi-restore" @click="reset">Reset to defaults</v-btn>
+    <span :class="['font-weight-bold', msg.kind]">{{ msg.text }}</span>
+  </div>
+  <p class="note" v-if="c.python">Project scripts are run with {{ c.python }}</p>
+  <p class="note" v-if="c.settings_file">Stored in {{ c.settings_file }}</p>
+</page-frame>
