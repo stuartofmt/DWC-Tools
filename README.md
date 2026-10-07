@@ -20,25 +20,32 @@ No zip program is needed, because the app makes zip files itself. Flask is insta
 
 ### From a release zip (plugin_tool.zip)
 
-Unzip it, then run `install.py` in the unzipped `plugin_tool` folder:
+Unzip it, then install by running the launcher for your system in the unzipped `plugin_tool` folder:
+
+- **Linux:** `./run.sh`
+- **Windows:** `run.bat` (double-click it, or run it in Command Prompt)
+
+The launcher runs `install.py` with the system Python and passes any options on to it:
 
 ```
-python3 install.py                       (Windows: py install.py)
-python3 install.py /home/pi/plugin_tool  (give the install folder straight away)
-python3 install.py --no-run              (install without starting the app)
-python3 install.py --no-gui              (ask for the install folder in the terminal, not in a window)
+./run.sh                       (Windows: run.bat)
+./run.sh /home/pi/plugin_tool  (give the install folder straight away)
+./run.sh --no-run              (install without starting the app)
+./run.sh --no-gui              (ask for the install folder in the terminal, not in a window)
 ```
+
+You can also run `install.py` directly with the same options: `python3 install.py` (Windows: `py install.py`).
 
 `install.py` does the following:
 
 1. It asks for the install folder if you didn't give one. On a desktop, a folder window opens. Go to where you want to install and press OK, and a `plugin_tool` folder is made there; pick an existing `plugin_tool` folder to install over it. To name the folder yourself, type its full path in the **Selection** box, such as `/home/pi/tools/dwc-plugin-tool`: a folder that doesn't exist yet is created and used as typed. Then confirm the final path. This needs Python's tkinter, which Windows has; on Raspberry Pi OS or Debian it's `python3-tk`. Over SSH, without a screen or tkinter, or with `--no-gui`, it asks in the terminal instead, where the default is `plugin_tool` in your home folder.
 2. It copies the app into that folder.
 3. It creates the app's own `venv` there and installs `requirements.txt` (Flask) into it with the venv's pip. This needs internet access.
-4. It adds `run.sh` (Windows: `run.bat`), which starts the app with that venv.
+4. It adds `run.sh` (Windows: `run.bat`) to the install folder. Unlike the one in the unzipped folder, this one starts the app with that venv.
 
-**When the install succeeds, `install.py` starts the app straight away**, unless you added `--no-run`. Stop it with Exit on the page, by closing all its tabs, or with Ctrl+C. After that, start it with `run.sh` (Windows: `run.bat`) in the install folder.
+**When the install succeeds, the app starts straight away**, unless you added `--no-run`. Stop it with Exit on the page, by closing all its tabs, or with Ctrl+C. After that, start it with `run.sh` (Windows: `run.bat`) in the install folder.
 
-Running `install.py` again updates the app's files and recreates the venv. Your settings, in `code/.plugin_build_exclusions.json` in the install folder, are kept as long as the release doesn't contain that file. When making a release with Prep_and_Package, tick it in Make Zip's Exclude files list.
+Running the installer again updates the app's files and recreates the venv. Your settings, in `.plugin_build_exclusions.json` in the install folder, are kept as long as the release doesn't contain that file. When making a release with Prep_and_Package, tick it in Make Zip's Exclude files list.
 
 ### From a copy of the repository
 
@@ -117,7 +124,7 @@ Settings can't be changed while a job is running.
 
 ### What is remembered
 
-The folders, the port, where to listen, the last selections in each tool, the ticked exclusions and any Code folders you've changed are all stored in `code/.plugin_build_exclusions.json`. The file is created the first time you save settings or press Build or Start. Deleting it resets everything to the defaults. If you move the app, take the `web` folder and this file with it.
+The folders, the port, where to listen, the last selections in each tool, the ticked exclusions and any Code folders you've changed are all stored in `.plugin_build_exclusions.json` in the install folder. The file is created the first time you save settings or press Build or Start. Deleting it resets everything to the defaults. If you move the app, take the `code` folder and this file with it.
 
 ## Stopping
 

@@ -10,7 +10,7 @@ The two tools have separate jobs, so a DWC dev server can keep running while you
 
 Setup (Linux, e.g. Raspberry Pi OS):  sudo apt install python3-venv git nodejs npm
 Setup (Windows 10 or later):          install Python 3.8+, Git for Windows and Node.js
-Install: unzip the release and run python3 install.py (Windows: py install.py). It copies the app to an install folder,
+Install: unzip the release and run ./run.sh (Windows: run.bat), which runs install.py. It copies the app to an install folder,
          creates its venv with Flask in it and adds run.sh / run.bat, then starts the app (unless --no-run is given).
 Run:     run.sh (Windows: run.bat) in the install folder; from a copy of the repository, ./run.sh once the venv exists
          (made by Prepare in Prep_and_Package, or: python3 -m venv venv; venv/bin/python -m pip install -r code/requirements.txt)
@@ -31,7 +31,7 @@ Result of CreatePlugin:
 
 The folders, the preferred port, where to listen, the remembered CreatePlugin exclusions and the last selections made in
 each tool (they become the defaults next time) are stored together in .plugin_build_exclusions.json,
-in the same folder as this script.
+in the install folder.
 """
 import json
 import logging
@@ -61,10 +61,11 @@ pluginVersion = '1.0.0'
 
 PLATFORM = platform.system()          # "Linux", "Windows", ...
 IS_WINDOWS = PLATFORM == "Windows"    # everything else is handled like Linux
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))   # where this script is installed
-# Until they are set on the Settings page, both folders are the folder this script is installed in
-DEFAULT_DWC_VERSIONS = SCRIPT_DIR
-DEFAULT_PLUGINS = SCRIPT_DIR
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))   # where this script is installed (<install folder>/code)
+INSTALL_DIR = os.path.dirname(SCRIPT_DIR)                   # the install folder (holds run.sh / run.bat)
+# Until they are set on the Settings page, both folders are the install folder
+DEFAULT_DWC_VERSIONS = INSTALL_DIR
+DEFAULT_PLUGINS = INSTALL_DIR
 DEFAULTS = {"dwc_versions_dir": DEFAULT_DWC_VERSIONS, "plugins_dir": DEFAULT_PLUGINS}
 # How deep below a plugin version folder plugin.json is looked for, and folders never looked in
 FIND_DEPTH = 3
@@ -75,10 +76,10 @@ DEFAULT_LISTEN = "network"
 HOST = "127.0.0.1"
 PORT = 0
 # Settings file: the two folders above, the preferred port, the ticked exclusion files remembered per
-# DWC version / plugin / plugin version, and the last selections made in each tool. It lives next to this
-# script. No other location is ever looked at, and no environment variable changes it.
+# DWC version / plugin / plugin version, and the last selections made in each tool. It lives in the install
+# folder. No other location is ever looked at, and no environment variable changes it.
 SETTINGS_NAME = ".plugin_build_exclusions.json"
-SETTINGS_FILE = os.path.join(SCRIPT_DIR, SETTINGS_NAME)
+SETTINGS_FILE = os.path.join(INSTALL_DIR, SETTINGS_NAME)
 # Always left out of a zip-only build (files ticked in the UI are left out as well)
 ALWAYS_SKIP_DIRS = ("__pycache__", "venv")
 STASH_PREFIX = ".excluded-"   # folders holding files moved aside during a build; never part of a plugin
@@ -992,7 +993,7 @@ def api_browse():
         return jsonify(path="", parent=None, dirs=[{"name": d, "path": d} for d in drives()], readable=True)
     path = os.path.expanduser(raw or os.sep)
     if not os.path.isabs(path):
-        path = SCRIPT_DIR
+        path = INSTALL_DIR
     path = os.path.normpath(path)
     while not os.path.isdir(path) and os.path.dirname(path) != path:
         path = os.path.dirname(path)
@@ -1188,11 +1189,12 @@ def build_readme(is_windows):
                 '<p><b>Windows</b> (10 or later). Install Python 3.8 or later (from python.org, tick "Add python.exe to PATH"), '
                 '<b>Git for Windows</b> (git-scm.com) and <b>Node.js</b> (nodejs.org, which includes npm).</p>'
                 '<p>Then unzip the release (<code>plugin_tool.zip</code>) and, in the unzipped <code>plugin_tool</code> folder, run:</p>'
-                '<pre>py install.py</pre>'
-                '<p>It asks for the install folder (in a folder window on a desktop, otherwise in the terminal), copies the app there, creates its own venv and installs Flask into it '
-                '(internet access is needed), and adds <code>run.bat</code>. <b>When the install succeeds it starts the app straight away</b> '
+                '<pre>run.bat</pre>'
+                '<p>(double-click it, or run it in Command Prompt). It runs <code>install.py</code>, which '
+                'asks for the install folder (in a folder window on a desktop, otherwise in the terminal), copies the app there, creates its own venv and installs Flask into it '
+                '(internet access is needed), and adds a <code>run.bat</code> there that starts the app. <b>When the install succeeds it starts the app straight away</b> '
                 '(add <code>--no-run</code> to install without starting it). After that, start it with <code>run.bat</code> in the install folder. '
-                'Running <code>install.py</code> again updates the app and keeps your settings.</p>'
+                'Running the installer again updates the app and keeps your settings.</p>'
                 '<p>No zip program is needed: the app makes zip files itself. Windows may ask whether to allow Python through '
                 'the firewall. Allow it on private networks, or other computers will not be able to open the page.</p>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, but Windows does not hide it: it shows in File Explorer like any other file.",
@@ -1210,11 +1212,12 @@ def build_readme(is_windows):
                 '<p><b>Linux</b> (for example Raspberry Pi OS / Debian Trixie): install what the tools use:</p>'
                 '<pre>sudo apt install python3-venv git nodejs npm</pre>'
                 '<p>Then unzip the release (<code>plugin_tool.zip</code>) and, in the unzipped <code>plugin_tool</code> folder, run:</p>'
-                '<pre>python3 install.py</pre>'
-                '<p>It asks for the install folder (in a folder window on a desktop, otherwise in the terminal), copies the app there, creates its own venv and installs Flask into it '
-                '(internet access is needed), and adds <code>run.sh</code>. <b>When the install succeeds it starts the app straight away</b> '
+                '<pre>./run.sh</pre>'
+                '<p>It runs <code>install.py</code>, which '
+                'asks for the install folder (in a folder window on a desktop, otherwise in the terminal), copies the app there, creates its own venv and installs Flask into it '
+                '(internet access is needed), and adds a <code>run.sh</code> there that starts the app. <b>When the install succeeds it starts the app straight away</b> '
                 '(add <code>--no-run</code> to install without starting it). After that, start it with <code>run.sh</code> in the install folder. '
-                'Running <code>install.py</code> again updates the app and keeps your settings.</p>'
+                'Running the installer again updates the app and keeps your settings.</p>'
                 '<p>From a copy of the repository, create the venv once (or run Prepare in Prep_and_Package on the folder), '
                 'then start it with <code>./run.sh</code>.</p>'
                 '<p>No zip program is needed: the app makes zip files itself.</p>'),

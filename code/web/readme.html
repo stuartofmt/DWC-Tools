@@ -100,12 +100,12 @@ To leave out more, open <b>Exclude files</b>, which lists every file under the C
 <p>The selections you used last time in each tool come back as the defaults, the ticked files are remembered per combination (above),
 and the two folders are kept until you change them. They are all stored in one settings file, which is currently
 <code id="cur-file">...</code>.</p>
-<p><b>Where the settings file is.</b> By default it is <code>.plugin_build_exclusions.json</code> in the same folder as <code>plugin_tools.py</code>. __HIDDEN_NOTE__ Things to know:</p>
+<p><b>Where the settings file is.</b> By default it is <code>.plugin_build_exclusions.json</code> in the install folder (the folder holding <code>run.sh</code> / <code>run.bat</code>). __HIDDEN_NOTE__ Things to know:</p>
 <ul>
   <li>It is not created when the app first starts. It appears the first time you save on the Settings page or press Build or Start.
       Until the file exists, the app opens on this page.</li>
   <li>That folder must be writable, or nothing can be saved. The app warns at start-up if it isn't.</li>
-  <li>If you move or copy the app to another folder, take the <code>web</code> folder and the settings file with it.</li>
+  <li>If you move or copy the app to another folder, take the <code>code</code> folder and the settings file with it.</li>
   <li>Moving your DWC versions or plugins folders does not move the file. Use Settings to point the tools at the new folders.</li>
   <li>It is plain text, so you can back it up or delete it. Deleting it resets everything to the defaults.</li>
 </ul>
