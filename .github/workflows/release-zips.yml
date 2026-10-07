@@ -1,4 +1,4 @@
-name: Attach standalone-zip zip to release
+name: Attach zips to release
 
 on:
   release:
@@ -20,20 +20,37 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
 
+      # Zips are taken from standalone-zip/ and plugin-zip/. When both hold zips, each is renamed so the two
+      # cannot clash: standalone-<name> and plugin-<name>. When only one does, its zips keep their names.
+      # When neither does, the zips in dist/ are used (as before), keeping their names.
       - name: Upload zips to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           shopt -s nullglob
-          files=(standalone-zip/*.zip)
+          standalone=(standalone-zip/*.zip)
+          plugin=(plugin-zip/*.zip)
+          out="$RUNNER_TEMP/release-zips"
+          mkdir -p "$out"
 
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No zip files found in standalone-zip/"
-            exit 1
+          if [ ${#standalone[@]} -gt 0 ] && [ ${#plugin[@]} -gt 0 ]; then
+            for f in "${standalone[@]}"; do cp "$f" "$out/standalone-$(basename "$f")"; done
+            for f in "${plugin[@]}"; do cp "$f" "$out/plugin-$(basename "$f")"; done
+          elif [ ${#standalone[@]} -gt 0 ]; then
+            cp "${standalone[@]}" "$out/"
+          elif [ ${#plugin[@]} -gt 0 ]; then
+            cp "${plugin[@]}" "$out/"
+          else
+            dist=(dist/*.zip)
+            if [ ${#dist[@]} -eq 0 ]; then
+              echo "No zip files found in standalone-zip/, plugin-zip/ or dist/"
+              exit 1
+            fi
+            cp "${dist[@]}" "$out/"
           fi
 
-          for f in "${files[@]}"; do
-            echo "Uploading $f"
+          for f in "$out"/*.zip; do
+            echo "Uploading $(basename "$f")"
             gh release upload "$TAG" "$f" --clobber
           done
