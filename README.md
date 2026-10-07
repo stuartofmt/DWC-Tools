@@ -12,11 +12,7 @@ This `main` branch only holds this index.
 
 ## Getting a tool
 
-Download the zip from the tool's release on the [Releases](../../releases) page, or clone just that branch:
-
-```
-git clone -b plugin_tool --single-branch https://github.com/stuartofmt/DWC-Tools.git plugin_tool
-```
+Download the zip from the tool's release on the [Releases](../../releases) page.
 
 ## Releases
 
