@@ -1,0 +1,39 @@
+name: Attach dist zip to release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload zips to (e.g. v1.2.3)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Upload zips to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          shopt -s nullglob
+          files=(dist/*.zip)
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No zip files found in dist/"
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            echo "Uploading $f"
+            gh release upload "$TAG" "$f" --clobber
+          done
