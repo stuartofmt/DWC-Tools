@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone tools - one small web app that prepares and releases standalone Python programs.
+"""Prep and Package - one small web app that prepares and releases standalone Python programs.
   /          Home        choose a tool
   /prepare   Prepare     make the project's requirements.txt from its imports, create its venv and install into it
   /makezip   Make Zip    build dist/<name>-<version>.zip (or dist/<name>.zip) from the project
@@ -24,10 +24,11 @@ with the venv's own pip, which also works where the system Python is "externally
 Each project has options, kept in the settings file: the main program, and whether its venv can see
 Python packages already installed on the system.
 
-Setup (Linux, e.g. Raspberry Pi OS):  sudo apt install python3-flask
-Setup (Windows 10 or later):          install Python 3.8+, then: pip install flask
-         (or: pip install -r requirements.txt)
-Run:     python3 standalone_tools.py       (Windows: python standalone_tools.py)
+Setup (Linux, e.g. Raspberry Pi OS):  sudo apt install python3-venv, then in the Prep_and_Package folder, once:
+         python3 -m venv venv; venv/bin/python -m pip install -r code/requirements.txt
+Setup (Windows 10 or later):          install Python 3.8+, then once: py -m venv venv;
+         venv\\Scripts\\python -m pip install -r code\\requirements.txt
+Run:     ./run.sh                    (Windows: venv\\Scripts\\python code\\prep_and_package.py)
 Keep the web folder (the pages' HTML, CSS and JS) next to this script.
 Open:    the address printed at start-up: this computer's network address (or 127.0.0.1 when Settings says
          "This computer only"), on the preferred port from the Settings page, or else the first free port from 17900.
@@ -37,7 +38,7 @@ The app stops by itself (stopping any running job) once every page of it has bee
 /api/alive every few seconds and /api/bye when it closes (see the "open pages" section).
 
 The settings, the recent projects and each project's options are stored together in
-.standalone_tools.json, in the same folder as this script.
+.prep_and_package.json, in the same folder as this script.
 """
 import ast
 import json
@@ -70,7 +71,7 @@ START_PORT = 17900   # plugin_tools searches from 17800, so the two apps can run
 # The address this tool listens on is worked out at start-up by validate_port() (see main())
 HOST = "127.0.0.1"
 PORT = 0
-SETTINGS_NAME = ".standalone_tools.json"
+SETTINGS_NAME = ".prep_and_package.json"
 SETTINGS_FILE = os.path.join(SCRIPT_DIR, SETTINGS_NAME)
 RECENT_MAX = 8   # most recent projects remembered
 FILES_LIMIT = 3000   # most files Make Zip's Exclude files list shows
@@ -88,7 +89,7 @@ VERSION_LINE = re.compile(r"""^\s*(?:progVersion|__version__|VERSION|version)\s*
 VERSION_OK = re.compile(r"[0-9A-Za-z._+-]+")   # it becomes part of the zip's file name
 
 app = Flask(__name__)
-logger = logging.getLogger("standalone_tools")
+logger = logging.getLogger("prep_and_package")
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
@@ -510,7 +511,7 @@ It can also be given straight away: python3 install.py /home/pi/__NAME__
 Once installed, the program is started with its launcher (run.sh, or run.bat on Windows);
 add --no-run to install without starting it.
 Running it again updates the program files and recreates the venv.
-(Made by standalone_tools.py.)
+(Made by prep_and_package.py.)
 """
 import argparse
 import os
@@ -1004,10 +1005,10 @@ def write_launcher(project, opts, lines):
         return
     main = opts["main"]
     if IS_WINDOWS:
-        text = ("@echo off\r\nrem Start the program with its venv (made by Prepare in standalone_tools).\r\n"
+        text = ("@echo off\r\nrem Start the program with its venv (made by Prepare in Prep_and_Package).\r\n"
                 f'cd /d "%~dp0"\r\nvenv\\Scripts\\python.exe -u {CODE_DIR}\\{main} %*\r\n')
     else:
-        text = ("#!/bin/bash\n# Start the program with its venv (made by Prepare in standalone_tools).\n"
+        text = ("#!/bin/bash\n# Start the program with its venv (made by Prepare in Prep_and_Package).\n"
                 f'cd "$(dirname "$0")"\nexec venv/bin/python -u {CODE_DIR}/{main} "$@"\n')
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text)
@@ -1401,11 +1402,11 @@ def render(title, page):
             .replace("__SCRIPT__", script).replace("__COMMON_JS__", web_file("common.js")))
 
 
-HOME_PAGE = render("Standalone tools", "home")
+HOME_PAGE = render("Prep and Package", "home")
 ZIP_PAGE = render("Make Zip", "makezip")
 PREPARE_PAGE = render("Prepare", "prepare")
-SETTINGS_PAGE = render("Standalone tools - Settings", "settings")
-_README_TEMPLATE = render("Standalone tools - Instructions", "readme")
+SETTINGS_PAGE = render("Prep and Package - Settings", "settings")
+_README_TEMPLATE = render("Prep and Package - Instructions", "readme")
 
 
 def build_readme(is_windows):
@@ -1414,8 +1415,9 @@ def build_readme(is_windows):
         text = {
             "__SETUP__": (
                 '<p><b>Windows</b> (10 or later). Install Python 3.8 or later (from python.org, tick "Add python.exe to PATH"). '
-                'Then open Command Prompt or PowerShell and install Flask:</p>'
-                '<pre>pip install flask</pre><p>Then start the app:</p><pre>python standalone_tools.py</pre>'
+                'Then, in Command Prompt in the <code>Prep_and_Package</code> folder, create the app\'s venv and install Flask into it, once:</p>'
+                '<pre>py -m venv venv\nvenv\\Scripts\\python -m pip install -r code\\requirements.txt</pre>'
+                '<p>Then start the app:</p><pre>venv\\Scripts\\python code\\prep_and_package.py</pre>'
                 '<p>Windows may ask whether to allow Python through the firewall. Allow it on private networks, '
                 'or other computers will not be able to open the page.</p>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, but Windows does not hide it: it shows in File Explorer like any other file.",
@@ -1423,9 +1425,10 @@ def build_readme(is_windows):
     else:
         text = {
             "__SETUP__": (
-                '<p><b>Linux</b> (for example Raspberry Pi OS / Debian Trixie): install Flask:</p>'
-                '<pre>sudo apt install python3-flask</pre>'
-                '<p>Then start the app from a terminal:</p><pre>python3 standalone_tools.py</pre>'),
+                '<p><b>Linux</b> (for example Raspberry Pi OS / Debian Trixie). In the <code>Prep_and_Package</code> folder, '
+                'create the app\'s venv and install Flask into it, once:</p>'
+                '<pre>sudo apt install python3-venv\npython3 -m venv venv\nvenv/bin/python -m pip install -r code/requirements.txt</pre>'
+                '<p>Then start the app from a terminal:</p><pre>./run.sh</pre>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, so it is hidden: use <code>ls -a</code> in that folder to see it.",
         }
     page = _README_TEMPLATE
@@ -1495,7 +1498,7 @@ def main():
     # No settings file yet = first run: start on the instructions. Otherwise start on Home as normal.
     path = "/" if os.path.isfile(SETTINGS_FILE) else "/readme"
     host = "localhost" if HOST in ("0.0.0.0", "127.0.0.1", "::") else HOST
-    print(f" * Standalone tools: http://{host}:{PORT}{path}")
+    print(f" * Prep and Package: http://{host}:{PORT}{path}")
     threading.Timer(1.0, open_browser, args=(path,)).start()  # give the server a moment to start
     threading.Thread(target=watch_pages, daemon=True).start()
     logger.info("The app stops by itself once every page of it has been closed")
