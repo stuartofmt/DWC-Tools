@@ -1,4 +1,4 @@
-# Installation script for nvm
+# Installation script for nvm - may need to check version numbers
 
 # Download and install nvm:
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash
