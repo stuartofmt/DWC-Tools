@@ -17,7 +17,8 @@ Prepare works on the project folder itself: it adds any missing packages the cod
 checks that the venv can import every package, and adds a run.sh / run.bat launcher if there is none.
 
 The zip unzips to a <name>/ folder holding README.md, code/ and an install.py made by this app
-(see INSTALL_TEMPLATE), so the release can be installed on another computer without this app.
+(see INSTALL_TEMPLATE), so the release can be installed on another computer without this app, plus
+run.sh and run.bat that start install.py with the system Python (see INSTALL_LAUNCHERS).
 
 Nothing is installed system-wide (no apt, no sudo): the venv is created and requirements.txt is installed into it
 with the venv's own pip, which also works where the system Python is "externally managed".
@@ -504,7 +505,7 @@ One-time setup for __NAME__: asks for an install directory, copies the
 program there, then creates its Python venv and installs requirements.txt into it with pip.
 Nothing is installed system-wide, so no sudo is needed.
 
-Run from the unzipped folder with: python3 install.py  (on Windows: py install.py)
+Run from the unzipped folder with: ./run.sh or python3 install.py  (on Windows: run.bat or py install.py)
 The install directory is chosen in a folder window when there is a desktop and Python has tkinter
 (otherwise it is asked for in the terminal; --no-gui always asks in the terminal).
 It can also be given straight away: python3 install.py /home/pi/__NAME__
@@ -707,6 +708,22 @@ if __name__ == '__main__':
 '''
 
 
+# Beside install.py in each release, so it can be started without typing the Python command.
+# The zip may be unzipped on either system, so it holds both.
+INSTALL_LAUNCHERS = {
+    "run.sh": ('#!/bin/sh\n'
+               '# Install the program (made by prep_and_package.py). Arguments go to install.py.\n'
+               'cd "$(dirname "$0")"\n'
+               'exec python3 install.py "$@"\n'),
+    "run.bat": ('@echo off\r\n'
+                'rem Install the program (made by prep_and_package.py). Arguments go to install.py.\r\n'
+                'cd /d "%~dp0"\r\n'
+                'where py >nul 2>nul\r\n'
+                'if %errorlevel%==0 (py -3 install.py %*) else (python install.py %*)\r\n'
+                'if errorlevel 1 pause\r\n'),
+}
+
+
 def make_install_py(name, opts, requirements):
     """The install.py for a project, with its name, options and requirements.txt (relative path) filled in."""
     values = {"__NAME_R__": repr(name), "__MAIN_R__": repr(opts["main"]), "__REQ_R__": repr(requirements),
@@ -783,6 +800,13 @@ def run_zip_job(lines, project, opts, exclude):
                 count += 1
             z.writestr(f"{name}/install.py", make_install_py(name, opts, requirements_file(project)))
             lines.append(f"  adding: {name}/install.py   (made by this app for {CODE_DIR}/{opts['main']})")
+            for launcher, text in INSTALL_LAUNCHERS.items():
+                info = zipfile.ZipInfo(f"{name}/{launcher}", time.localtime()[:6])
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3                  # Unix, so unzip keeps the mode below
+                info.external_attr = 0o100755 << 16     # executable
+                z.writestr(info, text)
+                lines.append(f"  adding: {name}/{launcher}   (runs install.py with the system Python)")
         st = os.stat(out)
         lines.append("")
         lines.append("Resulting ZIP file")

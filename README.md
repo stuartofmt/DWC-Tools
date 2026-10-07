@@ -93,6 +93,7 @@ This creates `dist/<name>-<version>.zip`, or `dist/<name>.zip` when the program 
     requirements.txt       when it is in the project folder
     code/                  without __pycache__, venv, .git, *.pyc or the files you exclude
     install.py             made by this app from the project options
+    run.sh, run.bat        start install.py with the system Python (python3, or py on Windows)
 ```
 
 **Exclude files** lists every file that would go into the zip. Tick the ones to leave out, such as a settings file that belongs to this computer (for example plugin_tool's `.plugin_build_exclusions.json`). The ticks are remembered for each project when you press Make Zip. Nothing is left out until you tick it, hidden files (names starting with a dot) included. The main program and `requirements.txt` can't be left out, because `install.py` needs them.
@@ -101,7 +102,7 @@ The page lists the zips already in `dist/`, newest first, and you can click one 
 
 ## Installing a release (install.py)
 
-On the target computer, unzip the release and run:
+On the target computer, unzip the release and run `./run.sh` (Windows: `run.bat`, or double-click it), which starts `install.py` with the system Python and passes on any arguments. Or run `install.py` yourself:
 
 ```
 python3 install.py                      (Windows: py install.py)
