@@ -29,3 +29,8 @@ node_modules/
 .idea/
 .DS_Store
 Thumbs.db
+
+# The tools themselves live on their own branches; locally each folder is a worktree of its branch
+/Prep_and_Package/
+/plugin_tool/
+/scripts/
