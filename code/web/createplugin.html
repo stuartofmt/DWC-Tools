@@ -1,21 +1,44 @@
+<page-frame title="Create a Plugin">
+  <v-alert v-if="loaded && !opts.plugins.length" type="warning" variant="tonal" class="mb-4">
+    No plugins found in <code>{{ opts.plugins_dir }}</code>: a plugin is a folder there with at least one sub-folder holding
+    plugin.json (in it, or up to 3 folders below it). Check the Plugins folder on the <a href="/settings">Settings</a> page.
+  </v-alert>
+  <v-row dense>
+    <v-col cols="12" sm="4">
+      <v-select v-model="dwc" :items="opts.dwc" label="DWC" hide-details @update:model-value="loadFiles(code)"
+                no-data-text="No DWC versions: download one with Create DWC Version"></v-select>
+    </v-col>
+    <v-col cols="12" sm="4">
+      <v-select v-model="pl" :items="opts.plugins.map(p => p.name)" label="Plugin" hide-details
+                @update:model-value="syncVersions()"></v-select>
+    </v-col>
+    <v-col cols="12" sm="4">
+      <v-select v-model="pv" :items="versions" label="Version" hide-details @update:model-value="loadFiles()"></v-select>
+    </v-col>
+  </v-row>
+  <div class="d-flex align-center ga-2 mt-4">
+    <v-combobox v-model="code" :items="found.map(shown)" label="Code folder" autocomplete="off" hide-details class="flex-grow-1"
+                @update:model-value="v => found.map(shown).includes(v) && loadCode()" @blur="loadCode" @keydown.enter="loadCode"></v-combobox>
+    <v-btn prepend-icon="mdi-auto-fix" :disabled="!custom || !found.length" @click="loadFiles(found[0])">Automatic</v-btn>
+  </div>
+  <div class="note">The folder holding <code>plugin.json</code>, inside the plugin version folder (<code>.</code> is that folder itself).</div>
+  <div :class="['note', codeNote.kind]">{{ codeNote.text }}</div>
 
-<div class="nav"><a href="/">&larr; Home</a> &middot; <a href="/readme">Instructions</a></div>
-<h2>Create a Plugin</h2>
-<label>DWC <select id="dwc"></select></label>
-<label>Plugin <select id="pl"></select></label>
-<label>Version <select id="pv"></select></label>
-<button id="go">Build</button> <button id="stop">Stop</button>
-<button id="exit">Exit</button> <button onclick="location.href='/settings'">Settings</button>
-<span id="status"></span>
-<div class="field">
-  <label for="code"><b>Code folder</b> (the folder holding <code>plugin.json</code>, inside the plugin version folder)</label>
-  <div class="pick"><input id="code" list="codelist" autocomplete="off"><button type="button" id="codeauto">Automatic</button></div>
-  <datalist id="codelist"></datalist>
-  <div class="note" id="coden"></div>
-</div>
-<p class="note bad" id="noplugins" hidden></p>
-<details>
-  <summary id="excount">Exclude files (0)</summary>
-  <div id="exlist"></div>
-</details>
-<div id="log"></div>
+  <job-panel api="/createplugin/api" label="Build" icon="mdi-hammer-wrench" :can-start="canStart" @start="start">
+    <v-expansion-panels v-if="pv" multiple>
+      <v-expansion-panel :title="`Exclude files (${excluded.length})`">
+        <v-expansion-panel-text>
+          <div class="note mb-2">Ticks are remembered for this DWC version + plugin + version. Paths start at the Code folder.
+            Zip-only builds: left out of the zip. Real builds: moved out of Code during the build, then put back.
+            Always excluded: __pycache__, venv, *.log, *.pyc</div>
+          <div v-if="truncated" class="note bad">Only the first {{ files.length }} files are listed: the Code folder holds more than that.</div>
+          <v-virtual-scroll :items="files" max-height="16rem" class="exfiles">
+            <template #default="{ item }">
+              <v-checkbox v-model="excluded" :value="item" :label="item" density="compact" hide-details></v-checkbox>
+            </template>
+          </v-virtual-scroll>
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
+  </job-panel>
+</page-frame>

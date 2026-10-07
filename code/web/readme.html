@@ -1,9 +1,8 @@
 
-<div class="nav"><a href="/">&larr; Home</a></div>
+<page-frame title="Instructions">
 <div class="doc">
-<h2>Instructions</h2>
-<p class="firstrun" id="first-run" hidden>Welcome. No settings have been saved yet, so the DWC versions folder and the plugins
-folder are both set to the folder this app is installed in (<code id="cur-script">...</code>). Open <a href="/settings">Settings</a> and point them at the right folders.</p>
+<v-alert v-if="c.first_run" type="info" variant="tonal" class="mb-4">Welcome. No settings have been saved yet, so the DWC versions folder and the plugins
+folder are both set to the folder this app is installed in (<code>{{ c.defaults.dwc_versions_dir }}</code>). Open <a href="/settings">Settings</a> and point them at the right folders.</v-alert>
 <p>These tools help with DuetWebControl (DWC) plugin development on a Raspberry Pi or a Windows PC. There are two:</p>
 <ul>
   <li><b>Create DWC Version</b> downloads a DWC release from GitHub, installs its dependencies and starts its dev server.</li>
@@ -43,15 +42,15 @@ Other sub-folders, such as <code>Documents</code>, are not listed.</p>
             ...</pre>
 <p>The Settings page also has the <b>Preferred port</b> for this tool's own web page. <code>0</code>, the default, means no preference:
 the first free port from 17800 is used. A change takes effect the next time the app starts.
-This tool is currently running at <code id="cur-url">...</code>.</p>
-<p>Currently in use: DWC versions in <code id="cur-dwc">...</code>, plugins in <code id="cur-plugins">...</code>.
+This tool is currently running at <code>{{ c.url || "..." }}</code>.</p>
+<p>Currently in use: DWC versions in <code>{{ c.dwc_versions_dir || "..." }}</code>, plugins in <code>{{ c.plugins_dir || "..." }}</code>.
 Change them on the <a href="/settings">Settings</a> page, for example if you move things to another disk.
-Type a path, or press <b>Browse</b> to pick a folder. Browse shows the folders on the computer running this app, even when the page is open on another computer.
+Type a path, or press <b>Browse</b> to pick a folder. Browse shows the folders on the computer running this app, even when the page is open on another computer: click a folder to open it, or a part of the path at the top to go back up to it, then press <b>Choose this folder</b>. Type in the filter box to show only the folders whose names contain that text. From the keyboard: ↑ and ↓ move, Enter opens a folder and Backspace goes up.
 Settings can't be changed while a job is running.</p>
 
 <h3>Create DWC Version: get a DWC version running</h3>
 <ol>
-  <li>Choose a version in the list, or choose <b>New version&hellip;</b> and type one, such as <code>3.5.1</code> or <code>3.6-dev</code>.
+  <li>Choose a version in the list, or choose <b>New version&hellip;</b> and type one in the box next to it, such as <code>3.5.1</code> or <code>3.6-dev</code>.
       Start with a digit and do not type a leading <code>v</code>. It must match a release tag (<code>v3.5.1</code>) or branch on the
       <a href="https://github.com/Duet3D/DuetWebControl" target="_blank" rel="noopener">DuetWebControl repository</a>.</li>
   <li>Press <b>Start</b>. It runs <code>git clone</code>, <code>npm install</code>, <code>npm audit</code> and then the dev server, and shows the output as it goes.
@@ -64,6 +63,7 @@ Settings can't be changed while a job is running.</p>
   <li>Press <b>Stop</b> to shut the dev server down. You can't start another version while it is running.</li>
 </ol>
 <p>Choosing a version that is already downloaded <b>deletes that folder and downloads it again</b>. You are asked to confirm first.
+While the dev server runs, the status next to the buttons shows its address: click it to open DWC.
 If the address doesn't answer 200 within 30 seconds, the log says so and the job just carries on waiting until the server exits or you press Stop.</p>
 
 <h3>Create a Plugin: build or zip a plugin</h3>
@@ -71,7 +71,7 @@ If the address doesn't answer 200 within 30 seconds, the log says so and the job
   <li>Choose the <b>DWC</b> version, the <b>Plugin</b> and its <b>Version</b>.</li>
   <li>Check the <b>Code folder</b>: the folder holding <code>plugin.json</code>, relative to the plugin version folder (<code>.</code> is that folder itself).
       It is filled in with the first one found. If a plugin version has <code>plugin.json</code> in more than one place, the others are listed under the box
-      and offered as you type. Type another folder to use that instead: it is remembered for that plugin version once you press Build.
+      and offered in the box's list. Type another folder to use that instead: it is remembered for that plugin version once you press Build.
       <b>Automatic</b> goes back to the one found.</li>
   <li>Press <b>Build</b>. What happens depends on the plugin's <code>plugin.json</code>:
     <ul>
@@ -99,7 +99,7 @@ To leave out more, open <b>Exclude files</b>, which lists every file under the C
 <h3>What is remembered</h3>
 <p>The selections you used last time in each tool come back as the defaults, the ticked files are remembered per combination (above),
 and the two folders are kept until you change them. They are all stored in one settings file, which is currently
-<code id="cur-file">...</code>.</p>
+<code>{{ c.settings_file || "..." }}</code>.</p>
 <p><b>Where the settings file is.</b> By default it is <code>.plugin_build_exclusions.json</code> in the install folder (the folder holding <code>run.sh</code> / <code>run.bat</code>). __HIDDEN_NOTE__ Things to know:</p>
 <ul>
   <li>It is not created when the app first starts. It appears the first time you save on the Settings page or press Build or Start.
@@ -116,7 +116,7 @@ and the two folders are kept until you change them. They are all stored in one s
   <li><b>Exit</b> stops everything and shuts the app down. The app also shuts itself down, stopping any job and the DWC dev server, when every one of its tabs has been closed:
       about 10 seconds after the last tab closes, or up to about 2 minutes if the browser was closed without warning (for example after a crash).
       Reloading a page or moving to another page of the app does not count as closing it. Until a browser has opened the app, it keeps running.</li>
-  <li>The Home page shows which tools are currently running.</li>
+  <li>The Home page shows which tools are currently running. The links to every page and the Exit button (the power icon) are in the bar at the top.</li>
 </ul>
 
 <h3>If something goes wrong</h3>
@@ -134,3 +134,4 @@ and the two folders are kept until you change them. They are all stored in one s
 __OS_ROWS__
 </table>
 </div>
+</page-frame>

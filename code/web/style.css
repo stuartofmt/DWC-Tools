@@ -1,39 +1,26 @@
- body{font-family:system-ui,sans-serif;margin:1rem;max-width:60rem}
- input,select{padding:.5rem;font-size:1rem;margin:0 .5rem .5rem 0}
- input.v{width:12rem}
- button{padding:.5rem 1rem;font-size:1rem;cursor:pointer}
- .nav{margin-bottom:.5rem}
- #status{margin-left:.5rem;font-weight:600}
- #log{background:#111;color:#ddd;padding:.75rem;height:65vh;overflow:auto;white-space:pre-wrap;
-      font:13px/1.4 ui-monospace,monospace;border-radius:6px;margin-top:1rem}
- details{margin:.25rem 0}
- summary{cursor:pointer;padding:.25rem 0}
- #exlist{max-height:14rem;overflow:auto;border:1px solid #888;border-radius:6px;padding:.5rem;margin-top:.25rem}
- #exlist label{display:block;font:13px ui-monospace,monospace}
- #exlist small{display:block;margin-bottom:.4rem;font:12px system-ui,sans-serif;opacity:.75}
- .cards{display:flex;gap:1rem;flex-wrap:wrap;margin:1rem 0}
- .card{flex:1 1 16rem;border:1px solid #888;border-radius:10px;padding:1rem 1.25rem;text-decoration:none;color:inherit}
- .card:hover{border-color:#2d7ff9}
- .card b{display:block;font-size:1.25rem;margin-bottom:.25rem}
- .card span{display:block;opacity:.8}
- .card em{display:block;font-style:normal;font-weight:600;min-height:1.2em;margin-top:.5rem}
- .field{margin:1rem 0}
- .field input{width:100%;box-sizing:border-box}
- .field input#pp{width:8rem}
- .note{font-size:.9rem;opacity:.8;min-height:1.2em}
- .bad{color:#c0392b;opacity:1}
- #msg{font-weight:600}
- .firstrun{border:1px solid #2d7ff9;border-radius:8px;padding:.6rem .9rem}
- .doc h3{margin:1.75rem 0 .5rem}
+ /* Vuetify's own styles are in CSS layers, so these (outside any layer) win over them */
+ :root{--v-font-body:system-ui,sans-serif;--v-font-heading:system-ui,sans-serif}
+ code,pre{font-family:ui-monospace,monospace}
+ .page{max-width:60rem}
+ .note{font-size:.9rem;opacity:.8;min-height:1.2em;margin-top:.25rem;overflow-wrap:anywhere}   /* long paths wrap on a phone */
+ .bad{color:rgb(var(--v-theme-error));opacity:1}
+ .good{color:rgb(var(--v-theme-success));opacity:1}
+ .log{background:#111;color:#ddd;padding:.75rem;height:65vh;overflow:auto;white-space:pre-wrap;
+      font:13px/1.4 ui-monospace,monospace;border-radius:6px}
+ .crumbs{display:flex;align-items:center;flex-wrap:wrap}
+ .crumbs .v-btn{text-transform:none;letter-spacing:normal;font-family:ui-monospace,monospace;padding:0 6px;min-width:0}
+ .filter{flex:1 1 14rem}
+ .dlg-list{min-height:12rem;height:50vh}
+ .dirs .v-list-item-title{font:14px ui-monospace,monospace;word-break:break-all;white-space:normal}
+ .pick-version{max-width:16rem;min-width:12rem}
+ .exfiles .v-label{font:13px ui-monospace,monospace;opacity:1}
+ .doc h3{margin:1.75rem 0 .5rem;font-size:1.2rem}
  .doc p,.doc li{line-height:1.5}
- .doc pre{background:#111;color:#ddd;padding:.75rem;border-radius:6px;overflow:auto;font:13px/1.4 ui-monospace,monospace}
- .doc code{font-family:ui-monospace,monospace;font-size:.95em}
+ .doc p{margin:.75rem 0}
+ .doc ul,.doc ol{padding-left:1.75rem;margin:.5rem 0}
+ .doc pre{background:#111;color:#ddd;padding:.75rem;border-radius:6px;overflow:auto;font:13px/1.4 ui-monospace,monospace;margin:.75rem 0}
+ .doc code{font-size:.95em;overflow-wrap:anywhere}
  .doc table{border-collapse:collapse;margin:.5rem 0}
- .doc td,.doc th{border:1px solid #888;padding:.35rem .7rem;text-align:left;vertical-align:top}
- .pick{display:flex;gap:.5rem;align-items:flex-start}
- .pick input{flex:1;min-width:0}
- #browser{width:min(40rem,90vw);border:1px solid #888;border-radius:10px}
- #browser .pick{margin-top:.5rem}
- #brlist{height:50vh;overflow:auto;border:1px solid #888;border-radius:6px;margin:.5rem 0 1rem}
- #brlist button{display:block;width:100%;text-align:left;border:0;background:none;padding:.35rem .6rem;font:14px ui-monospace,monospace}
- #brlist button:hover{background:#2d7ff922}
+ .doc td,.doc th{border:1px solid rgba(var(--v-border-color),var(--v-border-opacity));padding:.35rem .7rem;text-align:left;vertical-align:top}
+ .port{max-width:12rem}
+ .v-dialog--fullscreen .dlg-list{height:auto;flex:1 1 auto}

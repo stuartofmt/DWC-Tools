@@ -1,11 +1,20 @@
-
-<h2>DWC tools</h2>
-<div class="cards">
-  <a class="card" href="/createplugin"><b>Create a Plugin</b>
-    <span>Build or zip a DWC plugin</span><em id="s-createplugin"></em></a>
-  <a class="card" href="/dwcversion"><b>Create DWC Version</b>
-    <span>Clone a DWC version and start its dev server</span><em id="s-dwcversion"></em></a>
-</div>
-<button onclick="location.href='/settings'">Settings</button>
-<button onclick="location.href='/readme'">Instructions</button>
-<button id="exit">Exit</button>
+<page-frame title="DWC tools">
+  <v-row>
+    <v-col cols="12" sm="6">
+      <v-card href="/createplugin" variant="outlined" class="h-100" prepend-icon="mdi-puzzle" title="Create a Plugin"
+              text="Build or zip a DWC plugin">
+        <template #append><v-chip v-if="s.createplugin" color="primary" size="small">running</v-chip></template>
+      </v-card>
+    </v-col>
+    <v-col cols="12" sm="6">
+      <v-card href="/dwcversion" variant="outlined" class="h-100" prepend-icon="mdi-source-branch" title="Create DWC Version"
+              text="Clone a DWC version and start its dev server">
+        <template #append>
+          <v-chip v-if="s.dev_url" color="success" size="small">dev server running</v-chip>
+          <v-chip v-else-if="s.dwcversion" color="primary" size="small">running</v-chip>
+        </template>
+        <v-card-text v-if="s.dev_url" class="pt-0 note">Dev server running at <a :href="s.dev_url" target="_blank" @click.stop>{{ s.dev_url }}</a></v-card-text>
+      </v-card>
+    </v-col>
+  </v-row>
+</page-frame>

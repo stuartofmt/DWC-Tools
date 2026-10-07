@@ -55,7 +55,7 @@ import webbrowser
 import zipfile
 from glob import glob
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 pluginVersion = '1.0.0'
 
@@ -984,13 +984,15 @@ def drives():
 
 @app.get("/api/browse")
 def api_browse():
-    """Sub-folders of a folder on this computer, for the Browse buttons on the Settings page. The page may be
-    open on another computer, so the browser's own folder picker (which shows that computer's folders) is no use.
-    An empty path lists the drives on Windows and means / elsewhere. A path that does not exist falls back to the
-    nearest folder above it that does, and a relative one to the install folder."""
+    """Sub-folders of a folder on this computer, for the Browse buttons on the Settings page, and the folders
+    above it (crumbs, from the top). The page may be open on another computer, so the browser's own folder picker
+    (which shows that computer's folders) is no use. An empty path lists the drives on Windows and means / elsewhere.
+    A path that does not exist falls back to the nearest folder above it that does, and a relative one to the
+    install folder."""
     raw = request.args.get("path", "").strip()
+    top = [{"name": "Drives", "path": ""}] if IS_WINDOWS else []   # on Windows, above a drive is the list of drives
     if not raw and IS_WINDOWS:
-        return jsonify(path="", parent=None, dirs=[{"name": d, "path": d} for d in drives()], readable=True)
+        return jsonify(path="", parent=None, dirs=[{"name": d, "path": d} for d in drives()], readable=True, crumbs=top)
     path = os.path.expanduser(raw or os.sep)
     if not os.path.isabs(path):
         path = INSTALL_DIR
@@ -1000,8 +1002,15 @@ def api_browse():
     parent = os.path.dirname(path)
     if parent == path:   # a root: on Windows, Up goes on to the list of drives
         parent = "" if IS_WINDOWS else None
+    crumbs, p = [], path
+    while True:
+        crumbs.append({"name": os.path.basename(p) or p, "path": p})   # the top (/ or C:\) has no basename
+        up = os.path.dirname(p)
+        if up == p:
+            break
+        p = up
     return jsonify(path=path, parent=parent, readable=os.access(path, os.R_OK | os.X_OK),
-                   dirs=[{"name": d, "path": os.path.join(path, d)} for d in subdirs(path)])
+                   dirs=[{"name": d, "path": os.path.join(path, d)} for d in subdirs(path)], crumbs=top + crumbs[::-1])
 
 
 @app.get("/api/config")
@@ -1158,8 +1167,15 @@ def dwc_start():
 
 # ---------- pages ----------
 # The pages' HTML, CSS and JS live in the web folder next to this script. base.html is the frame every page
-# shares (style.css and common.js go into it); each page is <name>.html for its body plus <name>.js if it has a script.
+# shares (style.css and common.js go into it); each page is <name>.html, its Vue template, plus <name>.js if it has a script.
+# Vue and Vuetify are in web/vendor (fetched by update_vendor.py), so the pages work without internet access.
 WEB_DIR = os.path.join(SCRIPT_DIR, "web")
+VENDOR_DIR = os.path.join(WEB_DIR, "vendor")
+
+
+@app.get("/vendor/<path:name>")
+def vendor_file(name):
+    return send_from_directory(VENDOR_DIR, name, max_age=86400)
 
 
 def web_file(name):

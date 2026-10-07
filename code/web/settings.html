@@ -1,43 +1,36 @@
+<page-frame title="Settings">
+  <template v-for="f in folders" :key="f.key">
+    <v-text-field v-model="vals[f.key]" :label="f.label" :placeholder="c.defaults && c.defaults[f.key]" persistent-placeholder
+                  autocomplete="off" hide-details>
+      <template #append>
+        <v-btn v-if="smAndUp" prepend-icon="mdi-folder-search-outline" @click="openBrowser(f)">Browse…</v-btn>
+        <v-btn v-else icon="mdi-folder-search-outline" title="Browse" @click="openBrowser(f)"></v-btn>
+      </template>
+    </v-text-field>
+    <div :class="['note', 'mb-4', c[f.count] === null ? 'bad' : '']">{{ inUse(f) }}</div>
+  </template>
+  <div class="note mb-6">Folders must already exist. Press Browse to pick one, or enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\DWC</code> on Windows (<code>~</code> is fine too).
+    Until you change them, both show the folder this app is installed in (the default). Clear a box, or press Reset to defaults, to go back to it.
+    Create DWC Version puts new versions in the first folder; Create a Plugin reads the DWC versions from it and the plugins from the second.</div>
 
-<div class="nav"><a href="/">&larr; Home</a> &middot; <a href="/readme">Instructions</a></div>
-<h2>Settings</h2>
-<div class="field">
-  <label for="dv"><b>DWC versions folder</b></label>
-  <div class="pick"><input id="dv" autocomplete="off"><button type="button" data-browse="dv">Browse&hellip;</button></div>
-  <div class="note" id="dvn"></div>
-</div>
-<div class="field">
-  <label for="pd"><b>Plugins folder</b></label>
-  <div class="pick"><input id="pd" autocomplete="off"><button type="button" data-browse="pd">Browse&hellip;</button></div>
-  <div class="note" id="pdn"></div>
-</div>
-<p class="note">Folders must already exist. Press Browse to pick one, or enter a full path, such as <code>/home/pi/DWC</code> on Linux or <code>C:\DWC</code> on Windows (<code>~</code> is fine too).
-Until you change them, both show the folder this app is installed in (the default). Clear a box, or press Reset to defaults, to go back to it.
-Create DWC Version puts new versions in the first folder; Create a Plugin reads the DWC versions from it and the plugins from the second.</p>
-<div class="field">
-  <label for="pp"><b>Preferred port</b> for this tool's web page</label>
-  <input id="pp" inputmode="numeric" autocomplete="off">
-  <div class="note">0 means no preference: the first free port from 17800 is used. Otherwise use a port from 1024 to 65535.
-  If your preferred port is already in use, the first free port from 17800 is used instead.
-  A change takes effect the next time the app starts.</div>
-  <div class="note" id="ppn"></div>
-</div>
-<div class="field">
-  <label for="ls"><b>Listen on</b></label>
-  <select id="ls">
-    <option value="network">The whole network: any computer on it can open this page</option>
-    <option value="local">This computer only (127.0.0.1)</option>
-  </select>
+  <v-text-field v-model="pp" label="Preferred port" inputmode="numeric" autocomplete="off" hide-details class="port"></v-text-field>
+  <div class="note">The port for this tool's web page. 0 means no preference: the first free port from 17800 is used. Otherwise use a port from 1024 to 65535.
+    If your preferred port is already in use, the first free port from 17800 is used instead. A change takes effect the next time the app starts.</div>
+  <div class="note mb-6">{{ c.url ? "This tool is running at " + c.url : "" }}</div>
+
+  <v-select v-model="ls" label="Listen on" hide-details :items="[
+      {value: 'network', title: 'The whole network: any computer on it can open this page'},
+      {value: 'local', title: 'This computer only (127.0.0.1)'}]"></v-select>
   <div class="note">There is no login, so on the whole network anyone who can reach the page can run builds and change these settings.
   Choose this computer only if you use the app from this computer's own browser. Do not choose it on a Pi without a screen:
   you would no longer be able to open the page from another computer. A change takes effect the next time the app starts.</div>
-</div>
-<button id="save">Save</button> <button id="reset">Reset to defaults</button> <span id="msg"></span>
-<p class="note" id="file"></p>
-<dialog id="browser">
-  <b id="brtitle"></b>
-  <div class="pick"><input id="brpath" autocomplete="off"><button type="button" id="brgo">Go</button></div>
-  <button type="button" id="brup">&uarr; Up</button> <span class="note" id="brnote"></span>
-  <div id="brlist"></div>
-  <button type="button" id="brok">Choose this folder</button> <button type="button" id="brcancel">Cancel</button>
-</dialog>
+
+  <div class="d-flex align-center ga-2 flex-wrap my-6">
+    <v-btn color="primary" prepend-icon="mdi-content-save" @click="save">Save</v-btn>
+    <v-btn prepend-icon="mdi-restore" @click="reset">Reset to defaults</v-btn>
+    <span :class="['font-weight-bold', msg.kind]">{{ msg.text }}</span>
+  </div>
+  <p class="note" v-if="c.settings_file">Stored in {{ c.settings_file }}</p>
+
+  <folder-browser v-model="br.open" :title="'Choose the ' + br.label" :start="br.start" @choose="chosen"></folder-browser>
+</page-frame>

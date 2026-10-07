@@ -62,7 +62,7 @@ Then start the app with `./run.sh` (Windows: `venv\Scripts\python code\plugin_to
 
 The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17800. (Prep_and_Package uses ports from 17900, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
 
-Keep the `web` folder next to `plugin_tools.py`.
+Keep the `web` folder next to `plugin_tools.py`. The pages are built with Vue 3 and Vuetify 4, which are kept in `code/web/vendor` (they go into the release zip, so the app needs no internet access and no extra Node.js packages). To update them, change the versions at the top of `update_vendor.py` and run `python3 update_vendor.py`; run it again after using a new `mdi-...` icon in the pages, as only the icons in use are kept.
 
 ## Folder layout
 
@@ -116,7 +116,7 @@ These are always left out: `__pycache__` and `venv` folders, and `*.log` and `*.
 
 ## Settings
 
-- **DWC versions folder** and **Plugins folder**: type a full path, or press **Browse…** to pick a folder. Browse shows the folders on the computer running the app, even when the page is open on another computer. Clear a box, or press Reset to defaults, to go back to the install folder.
+- **DWC versions folder** and **Plugins folder**: type a full path, or press **Browse…** to pick a folder. Browse shows the folders on the computer running the app, even when the page is open on another computer. Click a folder to open it, or a part of the path at the top to go back up; the filter box narrows the list, and ↑ ↓, Enter and Backspace work from the keyboard. Clear a box, or press Reset to defaults, to go back to the install folder.
 - **Preferred port**: `0` means the first free port from 17800. A change takes effect the next time the app starts.
 - **Listen on**: either the whole network or this computer only (`127.0.0.1`). There is no login, so on the network setting anyone who can reach the page can run builds and change settings. Only use that setting on a network you trust. Don't choose "this computer only" on a Pi without a screen, or you won't be able to open the page.
 
