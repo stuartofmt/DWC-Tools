@@ -133,7 +133,7 @@ The settings, the current and recent projects, and each project's options are st
 
 - **Stop** ends the running job in that tool, along with everything it started (such as pip). A stopped zip is deleted. A stopped Prepare can leave the venv without every package: run Prepare again.
 - **Exit**, or Ctrl+C in the terminal, stops everything and shuts the app down.
-- **Closing every page of the app** also shuts it down, about 10 seconds after the last page closes. Reloading a page or moving to another page of the app doesn't count. A page that stops responding, for example after a browser crash, counts as closed after 90 seconds. Until a page has been opened for the first time, the app keeps running. Keep a page open while Prepare is running, because closing it stops Prepare.
+- **Closing every page of the app** also shuts it down, about 10 seconds after the last page closes. Reloading a page or moving to another page of the app doesn't count, and neither does minimizing the browser, switching to another tab or app, or leaving the page alone: there is no time limit. A page in front that stops responding, for example after a browser crash, counts as closed after 90 seconds. A hidden page never times out, because browsers slow, freeze or discard hidden pages; so if the browser crashes (or a phone closes the page in the background) while the app's page is hidden, the app keeps running until you use Exit or Ctrl+C. Until a page has been opened for the first time, the app keeps running. Keep a page open while Prepare is running, because closing it stops Prepare.
 
 ## Troubleshooting
 

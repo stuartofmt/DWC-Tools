@@ -10,15 +10,24 @@ async function post(url, body){
   const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body||{})});
   const j = await r.json(); if(!r.ok) ui.error = j.error; return j;
 }
-// Tell the app this page is open, every few seconds, and when it closes: the app stops once every page has gone
+// Tell the app this page is open (and whether it is hidden), every few seconds, and when it closes: the app stops once
+// every page has gone. A hidden page (minimized, another tab or app in front) may be slowed, frozen or discarded by
+// the browser, so the app does not expect to hear from it until it is shown again; closing it still says bye.
 const pageId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+let pageSeq = 0;   // numbers the messages, so the app can ignore one that arrives after a newer one
 function alive(){
-  if(!ui.closed) fetch("/api/alive", {method:"POST", headers:{"Content-Type":"application/json"},
-                                      body:JSON.stringify({page:pageId})}).catch(() => {});
+  if(ui.closed) return;
+  const hidden = document.visibilityState === "hidden";
+  const body = JSON.stringify({page:pageId, seq:++pageSeq, hidden});
+  // A beacon is still sent while the page is being hidden (and may be frozen straight after)
+  if(hidden) navigator.sendBeacon("/api/alive", body);
+  else fetch("/api/alive", {method:"POST", headers:{"Content-Type":"application/json"}, body}).catch(() => {});
 }
 alive();
 setInterval(alive, 5000);
-addEventListener("pagehide", () => navigator.sendBeacon("/api/bye", JSON.stringify({page:pageId})));
+addEventListener("visibilitychange", alive);
+addEventListener("freeze", alive);   // Chrome: about to be frozen (it is hidden by then)
+addEventListener("pagehide", () => navigator.sendBeacon("/api/bye", JSON.stringify({page:pageId, seq:++pageSeq})));
 addEventListener("pageshow", e => { if(e.persisted) alive(); });   // back again from the browser's back/forward cache
 
 // ---------- page frame: app bar with the links and Exit, the page's title and content, errors ----------
@@ -277,11 +286,15 @@ const ProjectPicker = {
       dlg.sel = Math.max(0, Math.min(i, shown.value.length - 1));
       Vue.nextTick(() => { const e = document.getElementById("dir-" + dlg.sel); if(e) e.scrollIntoView({block:"nearest"}); });
     }
-    function open(d){ d.is_project ? choose(d.path) : browse(d.path); }
+    // A project can hold other projects (any folder with a .py file below it counts), so a row always opens
+    // its folder: Select (or Ctrl+Enter) chooses it
     function onKey(e){
       if(e.key === "ArrowDown"){ e.preventDefault(); moveTo(dlg.sel + 1); }
       else if(e.key === "ArrowUp"){ e.preventDefault(); moveTo(dlg.sel - 1); }
-      else if(e.key === "Enter"){ const d = shown.value[dlg.sel]; if(d){ e.preventDefault(); open(d); } }
+      else if(e.key === "Enter"){
+        const d = shown.value[dlg.sel];
+        if(d){ e.preventDefault(); e.ctrlKey && d.is_project ? choose(d.path) : browse(d.path); }
+      }
       else if(e.key === "Backspace" && !dlg.filter && dlg.crumbs.length > 1){
         e.preventDefault();
         browse(dlg.crumbs[dlg.crumbs.length - 2].path);
@@ -296,7 +309,7 @@ const ProjectPicker = {
     });
     return {path, recent, view, optsOpen, menu, note, optNote, options, isProject, versionText, installPy, smAndUp, xs,
             items, typed, commit, complete, saveOptions, choose, baseName,
-            dlg, shown, filterBox, dirList, browse, openBrowser, open, onKey,
+            dlg, shown, filterBox, dirList, browse, openBrowser, onKey,
             refresh: () => check(current(), false)};
   },
   template: `
@@ -334,21 +347,21 @@ const ProjectPicker = {
           <v-text-field ref="filterBox" v-model="dlg.filter" prepend-inner-icon="mdi-magnify" placeholder="Filter folders…"
                         density="compact" variant="outlined" hide-details clearable class="filter" @keydown="onKey"></v-text-field>
         </div>
-        <div v-if="smAndUp" class="note px-4">↑ ↓ move · Enter opens a folder or selects a project · Backspace goes up</div>
+        <div v-if="smAndUp" class="note px-4">↑ ↓ move · Enter opens · Ctrl+Enter selects a project · Backspace goes up</div>
         <v-progress-linear :active="dlg.loading" indeterminate class="mt-2"></v-progress-linear>
         <v-divider></v-divider>
         <v-card-text ref="dirList" class="pa-0 dlg-list">
           <v-list density="compact" class="dirs" color="primary">
             <v-list-item v-if="!shown.length" :subtitle="dlg.dirs.length ? '(no folders match)' : '(no sub-folders)'"></v-list-item>
             <v-list-item v-for="(d, i) in shown" :key="d.path" :id="'dir-' + i" :active="i === dlg.sel" :class="{project: d.is_project}"
-                         :prepend-icon="d.is_project ? 'mdi-folder-star' : 'mdi-folder'" @click="open(d)" @mouseenter="dlg.sel = i">
+                         :prepend-icon="d.is_project ? 'mdi-folder-star' : 'mdi-folder'" @click="browse(d.path)" @mouseenter="dlg.sel = i">
               <v-list-item-title>{{ d.name }}</v-list-item-title>
               <template #append>
                 <template v-if="d.is_project">
                   <v-chip size="x-small" color="primary" class="mr-2">project</v-chip>
-                  <v-btn size="small" color="primary" @click.stop="choose(d.path)">Select</v-btn>
+                  <v-btn size="small" color="primary" class="mr-1" @click.stop="choose(d.path)">Select</v-btn>
                 </template>
-                <v-icon v-else icon="mdi-chevron-right" class="text-medium-emphasis"></v-icon>
+                <v-icon icon="mdi-chevron-right" class="text-medium-emphasis"></v-icon>
               </template>
             </v-list-item>
           </v-list>

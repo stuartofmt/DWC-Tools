@@ -37,7 +37,8 @@ Open:    the address printed at start-up: this computer's network address (or 12
          The first time (no settings file yet) the browser opens at /readme instead of Home.
 
 The app stops by itself (stopping any running job) once every page of it has been closed: each open page sends
-/api/alive every few seconds and /api/bye when it closes (see the "open pages" section).
+/api/alive every few seconds (saying whether it is hidden) and /api/bye when it closes (see the "open pages" section).
+A hidden page never times out, so minimizing the browser or leaving the page alone does not stop the app.
 
 The settings, the recent projects and each project's options are stored together in
 .prep_and_package.json, in the same folder as this script.
@@ -273,22 +274,24 @@ def shut_down(reason):
 
 # ---------- open pages: the app stops once the last one has gone ----------
 PAGE_GRACE = 10     # seconds to wait after the last page closed: a reload or a link opens the next page well within this
-PAGE_TIMEOUT = 90   # a page not heard from for this long counts as closed. Browsers slow the timers of a
-                    # background tab to about once a minute, so this must be well above that
-pages = {}          # page id -> when it was last heard from
+PAGE_TIMEOUT = 90   # a visible page not heard from for this long counts as closed (a browser that crashed or was killed).
+                    # A hidden page (minimized, another tab or app in front) never times out: browsers slow, freeze or
+                    # discard hidden pages, so its silence says nothing. Closing it still sends /api/bye.
+pages = {}          # page id -> {"seen": when it was last heard from, "hidden": bool, "seq": number of its last message}
+closed_pages = {}   # page id -> number of its /api/bye, so a message sent before it but arriving later is ignored
 pages_lock = threading.Lock()
 page_seen = False   # until a page has opened, the app keeps waiting (e.g. on a Pi without a screen)
 
 
 def watch_pages():
-    """Stop the app once every page has closed (or gone quiet for PAGE_TIMEOUT)."""
+    """Stop the app once every page has closed (or, while visible, gone quiet for PAGE_TIMEOUT)."""
     empty_since = None
     while True:
         time.sleep(2)
         now = time.monotonic()
         with pages_lock:
-            for page, last in list(pages.items()):
-                if now - last > PAGE_TIMEOUT:
+            for page, p in list(pages.items()):
+                if not p["hidden"] and now - p["seen"] > PAGE_TIMEOUT:
                     del pages[page]
             open_pages = len(pages)
         if not page_seen or open_pages:
@@ -1237,34 +1240,47 @@ def api_exit():
     return jsonify(ok=True)
 
 
-def page_id():
-    """The page id sent by common.js: JSON from fetch, plain text from navigator.sendBeacon."""
+def page_message():
+    """(page id, message number, hidden) sent by common.js, as JSON from fetch or plain text from
+    navigator.sendBeacon; (None, 0, False) if it is not usable."""
     try:
-        page = json.loads(request.get_data(as_text=True) or "{}").get("page")
+        d = json.loads(request.get_data(as_text=True) or "{}")
+        page, seq = d.get("page"), d.get("seq", 0)
     except (ValueError, AttributeError):
-        return None
-    return page if isinstance(page, str) and 0 < len(page) <= 64 else None
+        return None, 0, False
+    if not (isinstance(page, str) and 0 < len(page) <= 64) or not isinstance(seq, int) or isinstance(seq, bool):
+        return None, 0, False
+    return page, seq, bool(d.get("hidden"))
+
+
+def outdated(page, seq):
+    """Whether a message was overtaken by a newer one from the same page (call with pages_lock held)."""
+    return (page in pages and seq < pages[page]["seq"]) or seq <= closed_pages.get(page, -1)
 
 
 @app.post("/api/alive")
 def api_alive():
-    """An open page says it is still there."""
+    """An open page says it is still there, and whether it is hidden."""
     global page_seen
-    page = page_id()
+    page, seq, hidden = page_message()
     if page:
         with pages_lock:
-            pages[page] = time.monotonic()
-            page_seen = True
+            if not outdated(page, seq):
+                closed_pages.pop(page, None)   # back again (from the browser's back/forward cache)
+                pages[page] = {"seen": time.monotonic(), "hidden": hidden, "seq": seq}
+                page_seen = True
     return jsonify(ok=True)
 
 
 @app.post("/api/bye")
 def api_bye():
     """A page is being closed (or left for another page)."""
-    page = page_id()
+    page, seq, _ = page_message()
     if page:
         with pages_lock:
-            pages.pop(page, None)
+            if not outdated(page, seq):
+                pages.pop(page, None)
+                closed_pages[page] = seq
     return jsonify(ok=True)
 
 

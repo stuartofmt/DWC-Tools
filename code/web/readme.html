@@ -43,7 +43,7 @@ makes the rest.</p>
       that fit (project folders have a <b>project</b> tag): pick one to carry on into it, or press <b>Tab</b> to complete the name. Or</li>
   <li>press <b>Browse…</b> (on a narrow screen, the folder button next to the box). Click a folder to open it, or a part of the path at the top
       to go back up to it. Project folders are shown in bold with a <b>project</b> tag: press <b>Select</b> next to one, or <b>Use this folder</b>
-      for the folder being shown. Type in the filter box to show only the folders whose names contain that text. From the keyboard: ↑ and ↓ move, Enter opens a folder (or selects a project) and Backspace goes up.
+      for the folder being shown. Type in the filter box to show only the folders whose names contain that text. Clicking a folder always opens it, project or not, as a project can hold other projects. From the keyboard: ↑ and ↓ move, Enter opens the folder, Ctrl+Enter selects it when it is a project, and Backspace goes up.
       The recent projects are at the bottom, one click away.</li>
 </ul>
 <p>The project you choose in one tool is also chosen in the other, and comes back next time. Browse starts next to it.</p>
@@ -114,8 +114,10 @@ Venvs are made with <code>{{ c.python || "..." }}</code>, the Python outside any
       A stopped zip is deleted. Stopping Prepare part way can leave the venv without every package: press Prepare again.</li>
   <li><b>Exit</b> stops everything and shuts the app down (so does Ctrl+C in the terminal).</li>
   <li>Closing the page does the same: once every page of the app has been closed, in every browser that had it open, the app stops any running job and shuts down
-      about 10 seconds later. Going to another page of the app, or reloading, does not count. A page that stops answering
-      (for example after the browser crashed) counts as closed after 90 seconds. Until a page has been opened for the first time, the app keeps waiting.
+      about 10 seconds later. Going to another page of the app, or reloading, does not count, and nor does minimizing the browser, switching to
+      another tab or app, or leaving the page alone for a long time: the app has no time limit. A page in front that stops answering
+      (for example after the browser crashed) counts as closed after 90 seconds. If the browser crashes (or a phone closes the page in the background)
+      while the app's page is hidden, the app keeps running: use Exit, or Ctrl+C in its terminal. Until a page has been opened for the first time, the app keeps waiting.
       So keep a page open while Prepare runs: closing it stops Prepare.</li>
   <li>The Home page shows which tools are currently running.</li>
 </ul>
