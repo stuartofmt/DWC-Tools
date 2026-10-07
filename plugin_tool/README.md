@@ -38,11 +38,11 @@ python3 install.py --no-gui              (ask for the install folder in the term
 
 **When the install succeeds, `install.py` starts the app straight away**, unless you added `--no-run`. Stop it with Exit on the page, by closing all its tabs, or with Ctrl+C. After that, start it with `run.sh` (Windows: `run.bat`) in the install folder.
 
-Running `install.py` again updates the app's files and recreates the venv. Your settings, in `code/.plugin_build_exclusions.json` in the install folder, are kept as long as the release doesn't contain that file. When making a release with createStandalone, tick it in Make Zip's Exclude files list.
+Running `install.py` again updates the app's files and recreates the venv. Your settings, in `code/.plugin_build_exclusions.json` in the install folder, are kept as long as the release doesn't contain that file. When making a release with Prep_and_Package, tick it in Make Zip's Exclude files list.
 
 ### From a copy of the repository
 
-`run.sh` starts the app with the `venv` in the `plugin_tool` folder, so that venv must exist first. Either run **Prepare** on the `plugin_tool` folder in createStandalone, or create it yourself, once:
+`run.sh` starts the app with the `venv` in the `plugin_tool` folder, so that venv must exist first. Either run **Prepare** on the `plugin_tool` folder in Prep_and_Package, or create it yourself, once:
 
 ```
 python3 -m venv venv                                   (Windows: py -m venv venv)
@@ -53,7 +53,7 @@ Then start the app with `./run.sh` (Windows: `venv\Scripts\python code\plugin_to
 
 ## Starting
 
-The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17800. (createStandalone uses ports from 17900, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
+The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17800. (Prep_and_Package uses ports from 17900, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
 
 Keep the `web` folder next to `plugin_tools.py`.
 

@@ -19,7 +19,7 @@ build/
 
 # Per-computer settings written by the tools (folders, ports, recent projects)
 .plugin_build_exclusions.json
-.standalone_tools.json
+.prep_and_package.json
 
 # Node (DWC versions or plugins checked out here)
 node_modules/

@@ -1,4 +1,4 @@
-# createStandalone
+# Prep_and_Package
 
 A small web app for preparing and releasing standalone Python programs on a Raspberry Pi or a Windows PC.
 
@@ -27,12 +27,12 @@ venv/bin/python -m pip install -r code/requirements.txt  # once: Flask, into the
 ```
 py -m venv venv
 venv\Scripts\python -m pip install -r code\requirements.txt
-venv\Scripts\python code\standalone_tools.py
+venv\Scripts\python code\prep_and_package.py
 ```
 
 The app prints its address when it starts, and on a desktop it opens your browser there. It uses the preferred port from the Settings page if that port is free, and otherwise the first free port from 17900. (plugin_tool uses ports from 17800, so the two can run at the same time.) The first time it runs, it opens on the Instructions page.
 
-Keep the `web` folder next to `standalone_tools.py`.
+Keep the `web` folder next to `prep_and_package.py`.
 
 ## What a project looks like
 
@@ -126,7 +126,7 @@ When the install succeeds, it starts the program straight away with `run.sh` (Wi
 - **Preferred port**: `0` means the first free port from 17900. A change takes effect the next time the app starts.
 - **Listen on**: either the whole network or this computer only (`127.0.0.1`). There is no login, so on the network setting anyone who can reach the page can prepare projects and make zips. Only use that setting on a network you trust.
 
-The settings, the current and recent projects, and each project's options are stored in `code/.standalone_tools.json`. Deleting that file resets everything to the defaults.
+The settings, the current and recent projects, and each project's options are stored in `code/.prep_and_package.json`. Deleting that file resets everything to the defaults.
 
 ## Stopping
 
