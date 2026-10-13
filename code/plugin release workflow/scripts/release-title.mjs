@@ -67,13 +67,15 @@ export function pickTitle(version) {
 		.filter((l) => l && !l.startsWith("#"));
 
 	const suffix = tagSuffix();
-	const fallback = isStandalone() ? process.env.PLUGIN_VERSION || process.env.GITHUB_REF_NAME || "" : readManifest().version;
-	const current = ver(version || fallback).replace(DWC_SUFFIX, "");
+	const fallback = isStandalone() ? process.env.GITHUB_REF_NAME || process.env.PLUGIN_VERSION || "" : readManifest().version;
+	// A standalone release's tag is <branch>-v<version>: count only the tags with the same <branch>- prefix
+	const prefix = isStandalone() ? (/^(.+-)v\d/.exec(version || fallback)?.[1] ?? "") : "";
+	const current = ver((version || fallback).slice(prefix.length)).replace(DWC_SUFFIX, "");
 
 	// Only this branch's tags: those ending in its -dwc suffix.
-	const tags = git(["tag", "-l", "v*"]).split("\n").map((t) => t.trim()).filter(Boolean)
+	const tags = git(["tag", "-l", `${prefix}v*`]).split("\n").map((t) => t.trim()).filter(Boolean)
 		.filter((t) => (suffix ? t.endsWith(suffix) : !DWC_SUFFIX.test(t)))
-		.map((t) => ver(t.slice(0, t.length - suffix.length)));
+		.map((t) => ver(t.slice(prefix.length, t.length - suffix.length)));
 	if (!tags.includes(current)) tags.push(current);
 	tags.sort(cmp);
 	const idx = tags.indexOf(current);
@@ -82,7 +84,7 @@ export function pickTitle(version) {
 	return {
 		version: current,
 		title,
-		label: title ? `v${current}${suffix} — "${title}"` : `v${current}${suffix}`,
+		label: title ? `${prefix}v${current}${suffix} — "${title}"` : `${prefix}v${current}${suffix}`,
 		index: idx,
 		total: titles.length,
 		remaining: Math.max(0, titles.length - 1 - idx), // unused titles after this one (before wrap)

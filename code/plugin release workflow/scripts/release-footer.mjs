@@ -19,7 +19,7 @@ import { isStandalone, needsDwcBuild, readManifest, repoRoot, standaloneName } f
 
 if (isStandalone()) {
 	const name = process.env.PLUGIN_NAME || standaloneName();
-	const version = process.env.PLUGIN_VERSION || (process.env.GITHUB_REF_NAME || "").replace(/^v/, "");
+	const version = process.env.PLUGIN_VERSION || (process.env.GITHUB_REF_NAME || "").replace(/^(?:.+-)?v/, "");
 	const asset = `${name}-${version}.zip`;
 	process.stdout.write(`---
 

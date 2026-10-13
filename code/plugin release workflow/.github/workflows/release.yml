@@ -133,15 +133,16 @@ name: Release
 #   If there is no plugin.json anywhere in the repository, it is not a DWC plugin (e.g. a standalone
 #   program). The workflow does not download or build DWC: it zips the whole repository (without the
 #   files left out, below), with its files at the top of the ZIP.
-#     - The version comes from the tag: v<version>, e.g. v1.2.3 (v1.2.3-rc.1 is fine). A tag that is not
-#       v and a version number stops the run.
+#     - The version comes from the tag: <branch>-v<version>, e.g. main-v1.2.3 (main-v1.2.3-rc.1 is fine;
+#       ./scripts/release.sh tags it this way, and a plain v1.2.3 also works). Any other tag stops the run.
 #     - The ZIP is <repository name>-<version>.zip, e.g. MyTool-1.2.3.zip (a manual run:
 #       <repository name>-<branch>-<commit>.zip).
 #     - Besides the usual list, .github/, standalone-zip/ and the workflow's own scripts
 #       (scripts/manifest.mjs, prune-release.mjs, release-*.mjs, release-*.txt, release.sh) are always
 #       left out, and folders left empty are dropped.
 #     - The release notes say it is a standalone release that does not depend on any DWC version.
-#   ./scripts/release.sh asks for the version (showing the latest v* tag) and creates and pushes v<version>.
+#   ./scripts/release.sh asks for the version (showing the branch's latest tag) and creates and pushes
+#   <branch>-v<version>.
 #
 # ---------------------------------------------------------------------------------------------------
 # Leaving files out
@@ -170,6 +171,7 @@ on:
   push:
     tags:
       - "v*"
+      - "**-v[0-9]*" # <branch>-v<version>: a standalone release (no plugin.json), as scripts/release.sh tags it
   workflow_dispatch:
     inputs:
       dwc-ref:
@@ -248,8 +250,9 @@ jobs:
           if (standalone) {
             manifest.id = process.env.GITHUB_REPOSITORY.split("/")[1];
             if (tag) {
-              const match = /^v(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);
-              if (!match) throw new Error(`Release tag "${tag}" must be v followed by a version number, e.g. v1.2.3 (there is no plugin.json, so the version comes from the tag).`);
+              // <branch>-v<version> (as scripts/release.sh tags it), or just v<version>
+              const match = /^(?:.+-)?v(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);
+              if (!match) throw new Error(`Release tag "${tag}" must be <branch>-v followed by a version number, e.g. main-v1.2.3 (there is no plugin.json, so the version comes from the tag).`);
               manifest.version = match[1];
             } else {
               // Manual run on a branch: name the test ZIP after the branch and commit
@@ -285,7 +288,8 @@ jobs:
           if (needsBuild && !/^\d+\.\d+(\.\d+)?(-[0-9A-Za-z.-]+)?$/.test(manifest.dwcVersion)) {
             throw new Error(`Release tags need a numeric dwcVersion in ${manifestPath}, not "${manifest.dwcVersion}".`);
           }
-          const expectedTag = needsBuild ? `v${manifest.version}-dwc${manifest.dwcVersion}` : `v${manifest.version}`;
+          const expectedTag = standalone && tag ? tag
+            : needsBuild ? `v${manifest.version}-dwc${manifest.dwcVersion}` : `v${manifest.version}`;
 
           // A pushed tag is taken verbatim from GITHUB_REF. Manual runs on branches have no release tag.
           if (tag && tag !== expectedTag) {
