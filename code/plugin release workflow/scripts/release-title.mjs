@@ -9,6 +9,9 @@
  * a stable, distinct title with no per-release bookkeeping. The release workflow uses the output as the
  * Release name; run it locally to preview: `node scripts/release-title.mjs [vX.Y.Z]`.
  *
+ * A standalone repository (no plugin.json) has the branch being released in brackets after the tag:
+ * `vX.Y.Z (main) — "<title>"`.
+ *
  * Flags: `--remaining` prints just how many unused titles are left after this one (for low-list checks).
  */
 import { execFileSync } from "node:child_process";
@@ -56,6 +59,25 @@ function cmp(a, b) {
 }
 
 /**
+ * The branch being released (for a standalone release's title): RELEASE_BRANCH if set, else the branch
+ * checked out, else - as a tag push checks out the tag, not a branch - the one branch whose tip is this
+ * commit (scripts/release.sh pushes the branch, then tags its tip), else the one branch that holds it.
+ * "" if that is not clear.
+ */
+function releaseBranch() {
+	if (process.env.RELEASE_BRANCH) return process.env.RELEASE_BRANCH;
+	const checkedOut = git(["symbolic-ref", "--quiet", "--short", "HEAD"]);
+	if (checkedOut) return checkedOut;
+	for (const how of ["--points-at", "--contains"]) {
+		const names = new Set(git(["branch", "-r", "--format=%(refname:lstrip=3)", how, "HEAD"])
+			.split("\n").map((n) => n.trim()).filter((n) => n && n !== "HEAD"));
+		if (names.size === 1) return [...names][0];
+		if (names.size > 1) return "";
+	}
+	return "";
+}
+
+/**
  * Resolve the title + list stats for a version (defaults to plugin.json's version; for a standalone
  * repository with no plugin.json, to PLUGIN_VERSION or the tag being released).
  */
@@ -79,10 +101,12 @@ export function pickTitle(version) {
 	const idx = tags.indexOf(current);
 
 	const title = titles.length ? titles[idx % titles.length] : "";
+	const branch = isStandalone() ? releaseBranch() : "";
+	const tag = `v${current}${suffix}${branch ? ` (${branch})` : ""}`;
 	return {
 		version: current,
 		title,
-		label: title ? `v${current}${suffix} — "${title}"` : `v${current}${suffix}`,
+		label: title ? `${tag} — "${title}"` : tag,
 		index: idx,
 		total: titles.length,
 		remaining: Math.max(0, titles.length - 1 - idx), // unused titles after this one (before wrap)

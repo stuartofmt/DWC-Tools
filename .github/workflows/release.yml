@@ -140,6 +140,7 @@ name: Release
 #     - Besides the usual list, .github/, standalone-zip/ and the workflow's own scripts
 #       (scripts/manifest.mjs, prune-release.mjs, release-*.mjs, release-*.txt, release.sh) are always
 #       left out, and folders left empty are dropped.
+#     - The release title has the branch being released in brackets: v1.2.3 (main) — "<title>".
 #     - The release notes say it is a standalone release that does not depend on any DWC version.
 #   ./scripts/release.sh asks for the version (showing the latest v* tag) and creates and pushes v<version>.
 #

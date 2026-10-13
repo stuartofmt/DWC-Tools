@@ -119,6 +119,7 @@ If there is no `plugin.json` anywhere in the repository, it is not a DWC plugin 
 - **Version:** taken from the tag, as there is no `plugin.json` to hold it. The tag is `v<version>`, e.g. `v1.2.3` (pre-releases such as `v1.2.3-rc.1` are fine); a tag that is not `v` and a version number stops the run.
 - **ZIP:** `<repository name>-<version>.zip`, e.g. `MyTool-1.2.3.zip`. A manual run names it `<repository name>-<branch>-<commit>.zip`.
 - **Always left out:** besides the usual list below, `.github/`, `standalone-zip/` and the workflow's own scripts (`scripts/manifest.mjs`, `scripts/prune-release.mjs`, `scripts/release-*.mjs`, `scripts/release-*.txt`, `scripts/release.sh`). Folders left empty are dropped.
+- **Release title:** has the branch being released in brackets, e.g. `v1.2.3 (main) — "Sharpened Edge"`.
 - **Release notes:** say it is a standalone release that does not depend on any DWC version.
 
 `./scripts/release.sh` asks for the version to release (it shows the latest `v*` tag) and creates and pushes `v<version>`.

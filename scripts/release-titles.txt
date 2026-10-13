@@ -1,56 +1,56 @@
-# Original guard- and protection-themed release titles, one per line (blank lines and #comments ignored).
-Guard Duty
-Watchful Eye
-The Night Watch
-Safe and Sound
-On the Lookout
-Sentinel at the Gate
-Steady Vigil
-Guardian Angel
-All Clear
-Keepers of the Flame
-Shield of the Realm
-Standing Guard
-Eyes on the Horizon
-The Trusted Watch
-First Line of Defense
-Defender of the Prints
-Prints Under Watch
-The Careful Keeper
-Vigilant by Design
-Nothing Gets Past
-The Safety Net
-Guardian of the G-Code
-Print Patrol
-The Watchtower Upgrade
-Protect and Detect
-Keeping Things in Check
-Sentinel Systems
-The Safeguard Shift
-All Quiet on the Print Front
-Guardians of the Layers
-An Extra Pair of Eyes
-The Reliable Sentinel
-Perimeter Secured
-On Guard and Ready
-The Print Protector
-Watchful and Wonderful
-The Great Safeguard
-Every Layer Accounted For
-Your Friendly Neighborhood Guard
-Defensive by Nature
-The Vigilant Upgrade
-The Keeper's Promise
-Safe Passage
-Guardian of the Build
-The Watchful Machine
-Layers on Lock
-No Print Left Behind
-The Sentinel's Signal
-Protection in Progress
-Security Detail
-The Steadfast Shield
-Guarding the Good Stuff
-Vigilance Delivered
-The Caretaker's Code
-Always on Watch
+# Original tool- and workshop-themed release titles, one per line (blank lines and #comments ignored).
+Right Tool for the Job
+Sharpened Edge
+Measure Twice
+Cut Once
+Tighten the Bolts
+Spanner in the Works
+Hammer Time
+Nuts and Bolts
+The Well-Stocked Toolbox
+Swiss Army Knife
+Fine-Tuned Calibration
+Level Best
+Square and True
+Torque to Spec
+Feeler Gauge
+The Trusty Wrench
+Screwdriver Set
+Sanded Smooth
+Drill Down
+Bench Press
+Clamp It Down
+In the Workshop
+Pegboard Perfect
+Socket to Me
+Spirit Level
+The Handy Helper
+Plumb Line
+Vernier Precision
+Chisel and Mallet
+Elbow Grease
+Tool Chest Treasures
+Allen Key Assembly
+Torx Tales
+The Jig Is Up
+Workbench Warrior
+Hex Appeal
+Shop Vac Clean-Up
+Steady Hands
+Pliers of Power
+Ratchet It Up
+Box of Tricks
+Precision Ground
+Oiled and Ready
+Calipers Closing In
+The Multitool
+Bits and Pieces
+Snug Fit
+Filed and Finished
+Tinkerer's Delight
+Fixed in Place
+Grease Monkey
+Handyman Special
+Built to Last
+The Toolmaker's Mark
+Everything in Its Place
