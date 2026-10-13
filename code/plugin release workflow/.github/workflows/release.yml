@@ -133,15 +133,17 @@ name: Release
 #   If there is no plugin.json anywhere in the repository, it is not a DWC plugin (e.g. a standalone
 #   program). The workflow does not download or build DWC: it zips the whole repository (without the
 #   files left out, below), with its files at the top of the ZIP.
-#     - The version comes from the tag: v<version>, e.g. v1.2.3 (v1.2.3-rc.1 is fine). A tag that is not
-#       v and a version number stops the run.
+#     - The version comes from the tag: v<version>-<branch>, e.g. v1.2.3-main (v1.2.3-rc.1-main is fine;
+#       ./scripts/release.sh tags it this way). The branch name is left out of the version and the ZIP's
+#       name. A tag that is not v and a version number stops the run.
 #     - The ZIP is <repository name>-<version>.zip, e.g. MyTool-1.2.3.zip (a manual run:
 #       <repository name>-<branch>-<commit>.zip).
 #     - Besides the usual list, .github/, standalone-zip/ and the workflow's own scripts
 #       (scripts/manifest.mjs, prune-release.mjs, release-*.mjs, release-*.txt, release.sh) are always
 #       left out, and folders left empty are dropped.
 #     - The release notes say it is a standalone release that does not depend on any DWC version.
-#   ./scripts/release.sh asks for the version (showing the latest v* tag) and creates and pushes v<version>.
+#   ./scripts/release.sh asks for the version (showing the branch's latest tag) and creates and pushes
+#   v<version>-<branch> (a / in the branch name becomes -).
 #
 # ---------------------------------------------------------------------------------------------------
 # Leaving files out
@@ -251,6 +253,32 @@ jobs:
               const match = /^v(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);
               if (!match) throw new Error(`Release tag "${tag}" must be v followed by a version number, e.g. v1.2.3 (there is no plugin.json, so the version comes from the tag).`);
               manifest.version = match[1];
+              // scripts/release.sh appends -<branch> to the tag (a / in the branch name becomes -), e.g.
+              // v1.2.3-main: leave the branch name out of the version, and so out of the ZIP's name.
+              const branches = [];
+              for (let page = 1; ; page++) {
+                const response = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/branches?per_page=100&page=${page}`, {
+                  headers: {
+                    Accept: "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+                  },
+                });
+                if (!response.ok) throw new Error(`GitHub branches lookup returned ${response.status}: ${await response.text()}`);
+                const batch = await response.json();
+                branches.push(...batch.map((branch) => branch.name.replace(/\//g, "-")));
+                if (batch.length < 100) break;
+              }
+              const branch = branches
+                .filter((name) => manifest.version.endsWith(`-${name}`)
+                  && /^\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version.slice(0, -name.length - 1)))
+                .sort((a, b) => b.length - a.length)[0];
+              if (branch) {
+                manifest.version = manifest.version.slice(0, -branch.length - 1);
+                console.log(`Tag ${tag} ends with branch name ${branch}: version ${manifest.version}`);
+              } else {
+                console.log(`::warning::Tag ${tag} does not end with the name of a branch - the whole of it after v is the version.`);
+              }
             } else {
               // Manual run on a branch: name the test ZIP after the branch and commit
               manifest.version = `${process.env.GITHUB_REF_NAME.replace(/[^0-9A-Za-z.-]+/g, "-")}-${process.env.GITHUB_SHA.slice(0, 7)}`;
@@ -285,7 +313,9 @@ jobs:
           if (needsBuild && !/^\d+\.\d+(\.\d+)?(-[0-9A-Za-z.-]+)?$/.test(manifest.dwcVersion)) {
             throw new Error(`Release tags need a numeric dwcVersion in ${manifestPath}, not "${manifest.dwcVersion}".`);
           }
-          const expectedTag = needsBuild ? `v${manifest.version}-dwc${manifest.dwcVersion}` : `v${manifest.version}`;
+          // Standalone: the version was read from the tag, so the tag is what is expected
+          const expectedTag = standalone && tag ? tag
+            : needsBuild ? `v${manifest.version}-dwc${manifest.dwcVersion}` : `v${manifest.version}`;
 
           // A pushed tag is taken verbatim from GITHUB_REF. Manual runs on branches have no release tag.
           if (tag && tag !== expectedTag) {
