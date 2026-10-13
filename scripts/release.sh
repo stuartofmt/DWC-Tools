@@ -18,6 +18,7 @@
 # repository's Actions tab when it pauses at dwc-release-approval.
 #
 # Run from VS Code's terminal (so the GitHub sign-in is available):  ./scripts/release.sh
+# On Windows run it from Git Bash (it comes with Git for Windows, and can be VS Code's terminal).
 
 set -euo pipefail
 
@@ -48,8 +49,16 @@ if [ -z "$MANIFEST" ]; then
 	DWC_VERSION=""
 	TAG="v$VERSION"
 else
-	VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$MANIFEST")
-	DWC_VERSION=$(python3 -c "import json,sys; v=json.load(open(sys.argv[1])).get('dwcVersion'); print('' if v is None else str(v).strip())" "$MANIFEST")
+	# Python reads plugin.json: python3 on Linux, but on Windows (Git Bash) usually python or py - and python3 there may
+	# be only the Microsoft Store placeholder - so each is tried until one really runs.
+	PYTHON=""
+	for p in python3 python py; do
+		if command -v "$p" >/dev/null 2>&1 && "$p" -c "import json" >/dev/null 2>&1; then PYTHON=$p; break; fi
+	done
+	[ -n "$PYTHON" ] || { echo "Error: Python is needed to read $MANIFEST, but none of python3, python or py works."; exit 1; }
+	# tr: Python on Windows ends its output with \r\n, and the \r would end up in the tag name
+	VERSION=$("$PYTHON" -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$MANIFEST" | tr -d '\r')
+	DWC_VERSION=$("$PYTHON" -c "import json,sys; v=json.load(open(sys.argv[1])).get('dwcVersion'); print('' if v is None else str(v).strip())" "$MANIFEST" | tr -d '\r')
 	if [ -z "$DWC_VERSION" ]; then
 		TAG="v$VERSION"   # No DWC interface: the plugin is zipped, not built, and is not tied to a DWC version
 	else

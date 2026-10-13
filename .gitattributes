@@ -1,0 +1,2 @@
+# Keep shell scripts' line endings Linux ones, so bash can run them (added by Prep_and_Package)
+*.sh text eol=lf

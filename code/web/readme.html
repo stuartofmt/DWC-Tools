@@ -95,7 +95,9 @@ scripts/release-titles.txt         settings: the names used for release titles</
   <li>The page lists every file of the workflow and what <b>Copy</b> will do with it: <b>added</b> (not there yet), <b>replaced</b> (there, but
       different), <b>already the same</b>, or <b>kept</b>. The three settings files are the plugin's own: one already in the repository is kept,
       so copying again to update the workflow never loses your settings. Tick <b>Replace the plugin's settings files too</b> to overwrite them
-      with the ones from this app.</li>
+      with the ones from this app. The repository's <code>.gitattributes</code> gets the line <code>*.sh text eol=lf</code> (<b>line added</b>,
+      or <b>added</b> if there is no <code>.gitattributes</code>), so <code>release.sh</code> keeps Linux line endings in a Windows checkout and
+      Git Bash can run it. Nothing else in it is changed.</li>
   <li>Press <b>Copy</b>. Only the files in that folder change: Copy never commits or pushes. Commit the new files and push them yourself;
       that is when the workflow reaches GitHub.</li>
 </ol>

@@ -524,6 +524,9 @@ WORKFLOW_SETTINGS = ("scripts/release-channel.txt", "scripts/release-exclude.txt
 # Not looked in for plugin.json (as the workflow and release.sh skip them)
 MANIFEST_SKIP = (".git", "node_modules", "venv")
 MANIFEST_DEPTH = 3   # how far below a folder Browse looks for a plugin.json when marking plugin folders
+# Added to the plugin's .gitattributes (made if missing; the rest of it is never changed): keeps scripts/release.sh's
+# line endings Linux ones in a Windows checkout, where Git would otherwise convert them and bash could not run it
+GITATTRIBUTES_LINE = "*.sh text eol=lf"
 
 
 def workflow_files():
@@ -591,7 +594,40 @@ def workflow_plan(repo, replace_settings):
         else:
             action = "replace"
         plan.append({"file": rel, "action": action, "setting": setting})
+    plan.append({"file": ".gitattributes", "action": gitattributes_action(repo), "setting": False})
     return plan
+
+
+def gitattributes_action(repo):
+    """What Copy does to the plugin's .gitattributes: new (made, holding GITATTRIBUTES_LINE), update (the line added
+    to the end), same (a *.sh line with eol=lf is there already) or blocked."""
+    path = os.path.join(repo, ".gitattributes")
+    if not os.path.lexists(path):
+        return "new"
+    if not os.path.isfile(path):
+        return "blocked"
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            words = line.split()
+            if words and words[0] == "*.sh" and "eol=lf" in words[1:]:
+                return "same"
+    return "update"   # added at the end: a later line wins over an earlier *.sh one
+
+
+def add_gitattributes(repo):
+    """Add GITATTRIBUTES_LINE to the end of the plugin's .gitattributes, making it if there is none."""
+    path = os.path.join(repo, ".gitattributes")
+    text = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
+            text = f.read()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    if text and not text.endswith("\n"):
+        text += newline
+    text += "# Keep shell scripts' line endings Linux ones, so bash can run them (added by Prep_and_Package)" + newline
+    text += GITATTRIBUTES_LINE + newline
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
 
 
 def workflow_view(raw, replace_settings=False):
@@ -630,7 +666,10 @@ def copy_workflow(repo, replace_settings):
     done = []
     for item in workflow_plan(repo, replace_settings):
         rel, action = item["file"], item["action"]
-        if action in ("new", "replace"):
+        if rel == ".gitattributes" and action in ("new", "update"):
+            add_gitattributes(repo)
+            done.append((rel, "added" if action == "new" else f"updated: {GITATTRIBUTES_LINE} added"))
+        elif action in ("new", "replace"):
             dst = os.path.join(repo, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy2(os.path.join(WORKFLOW_DIR, rel), dst)   # keeps release.sh executable

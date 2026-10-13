@@ -38,6 +38,8 @@ Make sure the commit from step 1 is the one checked out when you run `git tag`, 
 
 Alternatively, run `./scripts/release.sh`. It reads the version and `dwcVersion` from `plugin.json` (and the channel from `scripts/release-channel.txt`), reports whether that tag has already been used, and creates and pushes the tag for you. It never changes `plugin.json`.
 
+On Windows, run `./scripts/release.sh` from **Git Bash** (it comes with Git for Windows, and can be chosen as VS Code's terminal). It needs Python to read `plugin.json` and uses whichever of `python3`, `python` or `py` works. Prep_and_Package's Copy Plugin Release Workflow adds `*.sh text eol=lf` to the repository's `.gitattributes`, so Git keeps `release.sh`'s Linux line endings in a Windows checkout. Without that line, Git may convert them and bash stops with `$'\r': command not found`: add the line (or run `git config core.autocrlf input`), then check the file out again (`git checkout -- scripts/release.sh`).
+
 > [!IMPORTANT]
 > Do **not** create the tag or the Release using the **Releases** page on the GitHub website ("Draft a new release" / "Create a new release"). Doing that publishes a Release before this workflow runs, so the workflow will find an existing Release and ask you to approve overwriting it. Always create the tag with git as shown above and let this workflow create the Release.
 
