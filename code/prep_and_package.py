@@ -1301,25 +1301,13 @@ _README_TEMPLATE = render("Prep and Package - Instructions", "readme")
 
 
 def build_readme(is_windows):
-    """The instructions page, with the setup steps and examples for Windows or Linux."""
+    """The instructions page, with the examples for Windows or Linux."""
     if is_windows:
         text = {
-            "__SETUP__": (
-                '<p><b>Windows</b> (10 or later). Install Python 3.8 or later (from python.org, tick "Add python.exe to PATH"). '
-                'Then, in Command Prompt in the <code>Prep_and_Package</code> folder, create the app\'s venv and install Flask into it, once:</p>'
-                '<pre>py -m venv venv\nvenv\\Scripts\\python -m pip install -r code\\requirements.txt</pre>'
-                '<p>Then start the app:</p><pre>venv\\Scripts\\python code\\prep_and_package.py</pre>'
-                '<p>Windows may ask whether to allow Python through the firewall. Allow it on private networks, '
-                'or other computers will not be able to open the page.</p>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, but Windows does not hide it: it shows in File Explorer like any other file.",
         }
     else:
         text = {
-            "__SETUP__": (
-                '<p><b>Linux</b> (for example Raspberry Pi OS / Debian Trixie). In the <code>Prep_and_Package</code> folder, '
-                'create the app\'s venv and install Flask into it, once:</p>'
-                '<pre>sudo apt install python3-venv\npython3 -m venv venv\nvenv/bin/python -m pip install -r code/requirements.txt</pre>'
-                '<p>Then start the app from a terminal:</p><pre>./run.sh</pre>'),
             "__HIDDEN_NOTE__": "The name starts with a dot, so it is hidden: use <code>ls -a</code> in that folder to see it.",
         }
     page = _README_TEMPLATE
