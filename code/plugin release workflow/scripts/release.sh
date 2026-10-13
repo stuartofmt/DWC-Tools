@@ -11,9 +11,8 @@
 #        - new tag:      tells you to update and commit plugin.json first, then exits
 #
 # With no plugin.json the repository is not a plugin: the Release workflow zips the whole repository as a
-# standalone ZIP, and the version comes from the tag. This script then shows the branch's latest tag, asks
-# for the version to release and uses the tag v<version>-<branch>, e.g. v1.2.3-main (a / in the branch
-# name becomes -).
+# standalone ZIP, and the version comes from the tag. This script then shows the latest v* tag, asks for
+# the version to release and uses the tag v<version>.
 #
 # Pushing the tag starts the Release workflow (.github/workflows/release.yml). Approve the run in the
 # repository's Actions tab when it pauses at dwc-release-approval.
@@ -40,16 +39,14 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ -z "$MANIFEST" ]; then
 	# No plugin.json: a standalone release of the whole repository, its version only in the tag
 	echo "No plugin.json in this repository: it will be released as a standalone ZIP of the repository."
-	BRANCH_SUFFIX="-${BRANCH//\//-}"   # appended to the tag; a / is not allowed in the workflow's version
-	LATEST=$(git tag -l "v*$BRANCH_SUFFIX" --sort=-v:refname | head -n1)
+	LATEST=$(git tag -l 'v*' --sort=-v:refname | head -n1)
 	echo "Latest tag: ${LATEST:-none}"
 	read -rp "Version to release (e.g. 1.2.3): " VERSION
 	VERSION=${VERSION#v}
 	[[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]] \
 		|| { echo "Error: \"$VERSION\" is not a version number such as 1.2.3."; exit 1; }
 	DWC_VERSION=""
-	TAG="v$VERSION$BRANCH_SUFFIX"
-	git check-ref-format "refs/tags/$TAG" || { echo "Error: \"$TAG\" is not a valid tag name."; exit 1; }
+	TAG="v$VERSION"
 else
 	VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$MANIFEST")
 	DWC_VERSION=$(python3 -c "import json,sys; v=json.load(open(sys.argv[1])).get('dwcVersion'); print('' if v is None else str(v).strip())" "$MANIFEST")
@@ -142,7 +139,6 @@ fi
 # --- Release ---------------------------------------------------------------------------------------
 echo "This will:"
 echo "  - push branch $BRANCH to GitHub"
-[ -z "$MANIFEST" ] && echo "  - use tag $TAG: the version you entered (v$VERSION) with the branch name ($BRANCH_SUFFIX) appended"
 echo "  - create tag $TAG on the current commit ($(git log -1 --format='%h %s'))"
 echo "  - push tag $TAG (this starts the Release workflow)"
 read -rp "Continue? [y/N] " ANSWER

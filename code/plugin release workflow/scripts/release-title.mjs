@@ -67,7 +67,7 @@ export function pickTitle(version) {
 		.filter((l) => l && !l.startsWith("#"));
 
 	const suffix = tagSuffix();
-	const fallback = isStandalone() ? process.env.GITHUB_REF_NAME || process.env.PLUGIN_VERSION || "" : readManifest().version;
+	const fallback = isStandalone() ? process.env.PLUGIN_VERSION || process.env.GITHUB_REF_NAME || "" : readManifest().version;
 	const current = ver(version || fallback).replace(DWC_SUFFIX, "");
 
 	// Only this branch's tags: those ending in its -dwc suffix.
