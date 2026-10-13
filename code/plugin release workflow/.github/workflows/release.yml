@@ -6,7 +6,9 @@ name: Release
 #   It builds the installable plugin ZIP file on GitHub's servers, compiling the plugin against the
 #   DuetWebControl (DWC) source code. You do not need to build anything on your own computer.
 #   A plugin whose plugin.json has no dwcVersion has no DWC interface to compile, so it is simply
-#   zipped instead, as plugin_tools does (see "Plugins without a DWC interface" below). Either way,
+#   zipped instead, as plugin_tools does (see "Plugins without a DWC interface" below). A repository
+#   with no plugin.json at all is not a plugin: the whole repository is zipped as a standalone ZIP, with
+#   no build and no DWC dependency (see "Repositories without a plugin.json" below). Either way,
 #   files listed in scripts/release-exclude.txt are left out of the ZIP (see "Leaving files out").
 #
 #   The workflow can be started in two different ways, and they produce different results:
@@ -126,6 +128,22 @@ name: Release
 #   <id>-<version>.zip, and the release notes say it works with any DWC version.
 #
 # ---------------------------------------------------------------------------------------------------
+# Repositories without a plugin.json (standalone)
+# ---------------------------------------------------------------------------------------------------
+#   If there is no plugin.json anywhere in the repository, it is not a DWC plugin (e.g. a standalone
+#   program). The workflow does not download or build DWC: it zips the whole repository (without the
+#   files left out, below), with its files at the top of the ZIP.
+#     - The version comes from the tag: v<version>, e.g. v1.2.3 (v1.2.3-rc.1 is fine). A tag that is not
+#       v and a version number stops the run.
+#     - The ZIP is <repository name>-<version>.zip, e.g. MyTool-1.2.3.zip (a manual run:
+#       <repository name>-<branch>-<commit>.zip).
+#     - Besides the usual list, .github/, standalone-zip/ and the workflow's own scripts
+#       (scripts/manifest.mjs, prune-release.mjs, release-*.mjs, release-*.txt, release.sh) are always
+#       left out, and folders left empty are dropped.
+#     - The release notes say it is a standalone release that does not depend on any DWC version.
+#   ./scripts/release.sh asks for the version (showing the latest v* tag) and creates and pushes v<version>.
+#
+# ---------------------------------------------------------------------------------------------------
 # Leaving files out
 # ---------------------------------------------------------------------------------------------------
 #   scripts/release-exclude.txt lists files and folders to leave out of the ZIP, one pattern per line,
@@ -140,11 +158,12 @@ name: Release
 # Order the jobs run in
 # ---------------------------------------------------------------------------------------------------
 #   1. resolve-dwc - read plugin.json, check the tag matches its version and dwcVersion, see if a Release already
-#                    exists, and choose the DWC version (none with no dwcVersion - the plugin is zipped).
+#                    exists, and choose the DWC version (none with no dwcVersion - the plugin is zipped -
+#                    or with no plugin.json - the repository is zipped as a standalone ZIP).
 #   2. approval    - pause until someone approves at the dwc-release-approval environment.
 #   3. build       - copy the plugin folder and leave out the excluded files, then download DWC and build
-#                    the ZIP from the copy with DWC's scripts/build-plugin.js - or, with no dwcVersion,
-#                    zip the copy.
+#                    the ZIP from the copy with DWC's scripts/build-plugin.js - or, with no dwcVersion
+#                    or no plugin.json, zip the copy.
 #   4. output      - automatic: publish the GitHub Release. Manual: provide the ZIP as an artifact.
 
 on:
@@ -211,15 +230,32 @@ jobs:
             return matches;
           }
 
+          // No plugin.json anywhere: not a plugin. The whole repository is zipped as a standalone ZIP,
+          // named after the repository, with the version taken from the tag - no DWC build or release.
           const manifestPath = existsSync("plugin.json")
             ? "plugin.json"
             : (() => {
                 const matches = findManifests(".");
-                if (matches.length === 0) throw new Error("No plugin.json found at the repository root or in subfolders.");
+                if (matches.length === 0) return "";
                 if (matches.length > 1) throw new Error(`Multiple subfolder plugin.json files found: ${matches.map((path) => relative(".", path)).join(", ")}`);
                 return relative(".", matches[0]);
               })();
-          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+          const standalone = !manifestPath;
+          const tag = process.env.GITHUB_REF.startsWith("refs/tags/")
+            ? process.env.GITHUB_REF.slice("refs/tags/".length)
+            : "";
+          const manifest = standalone ? {} : JSON.parse(readFileSync(manifestPath, "utf8"));
+          if (standalone) {
+            manifest.id = process.env.GITHUB_REPOSITORY.split("/")[1];
+            if (tag) {
+              const match = /^v(\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);
+              if (!match) throw new Error(`Release tag "${tag}" must be v followed by a version number, e.g. v1.2.3 (there is no plugin.json, so the version comes from the tag).`);
+              manifest.version = match[1];
+            } else {
+              // Manual run on a branch: name the test ZIP after the branch and commit
+              manifest.version = `${process.env.GITHUB_REF_NAME.replace(/[^0-9A-Za-z.-]+/g, "-")}-${process.env.GITHUB_SHA.slice(0, 7)}`;
+            }
+          }
           if (typeof manifest.version !== "string" || !manifest.version) {
             throw new Error(`${manifestPath} must contain a non-empty string version.`);
           }
@@ -228,8 +264,9 @@ jobs:
           }
           // No dwcVersion: the plugin has no DWC interface to compile, so it is zipped instead of built
           // (as plugin_tools does), its tag has no -dwc suffix and no DWC release is needed.
-          const needsBuild = manifest.dwcVersion !== undefined && manifest.dwcVersion !== null
+          const needsBuild = !standalone && manifest.dwcVersion !== undefined && manifest.dwcVersion !== null
             && String(manifest.dwcVersion).trim() !== "";
+          const packageMode = standalone ? "standalone" : needsBuild ? "build" : "zip";
           if (needsBuild && typeof manifest.dwcVersion !== "string") {
             throw new Error(`${manifestPath} dwcVersion must be a string, e.g. "3.7".`);
           }
@@ -250,9 +287,6 @@ jobs:
           }
           const expectedTag = needsBuild ? `v${manifest.version}-dwc${manifest.dwcVersion}` : `v${manifest.version}`;
 
-          const tag = process.env.GITHUB_REF.startsWith("refs/tags/")
-            ? process.env.GITHUB_REF.slice("refs/tags/".length)
-            : "";
           // A pushed tag is taken verbatim from GITHUB_REF. Manual runs on branches have no release tag.
           if (tag && tag !== expectedTag) {
             throw new Error(`Release tag "${tag}" does not match "${expectedTag}" (${manifestPath} version "${manifest.version}", dwcVersion "${manifest.dwcVersion}").`);
@@ -364,6 +398,11 @@ jobs:
           selected = (override ?? candidates.at(-1)).release.tag_name;
           console.log(`Manifest: ${manifestPath} (plugin ${manifest.version}, required DWC ${manifest.dwcVersion})`);
           console.log(`Selected DuetWebControl release: ${selected}`);
+          } else if (standalone) {
+            console.log(`No plugin.json - ${manifest.id} ${manifest.version} will be released as a standalone ZIP of the repository.`);
+            if (process.env.DWC_REF_OVERRIDE.trim()) {
+              console.log(`::warning::dwc-ref "${process.env.DWC_REF_OVERRIDE}" is ignored - there is no plugin.json, so nothing is built against DWC.`);
+            }
           } else {
             console.log(`Manifest: ${manifestPath} (plugin ${manifest.version}) has no dwcVersion - it will be zipped, not built.`);
             if (process.env.DWC_REF_OVERRIDE.trim()) {
@@ -375,8 +414,8 @@ jobs:
             : tag
               ? `\n\nNo published release currently exists for \`${tag}\`. Approve the \`dwc-release-approval\` environment to continue, or reject the deployment to stop this run.`
               : "";
-          appendFileSync(process.env.GITHUB_OUTPUT, `manifest=${manifestPath}\nplugin-name=${manifest.id}\nplugin-version=${manifest.version}\nplugin-dwc-version=${needsBuild ? manifest.dwcVersion : ""}\npackage-mode=${needsBuild ? "build" : "zip"}\ndwc-ref=${selected}\nrelease-exists=${existingRelease ? "true" : "false"}\nrelease-url=${existingRelease?.html_url ?? ""}\nmake-latest=${channel === "latest"}\n`);
-          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Release preflight\n\n- Plugin manifest: \`${manifestPath}\`\n- Plugin version: \`${manifest.version}\`\n- Release channel: \`${channel}\` (tag \`${expectedTag}\`${channel === "latest" ? ", marked Latest" : ", not marked Latest"})\n${needsBuild ? `- Packaging: built with DWC's plugin builder\n- Required DWC version: \`${manifest.dwcVersion}\`\n- Selected DWC release: \`${selected}\`` : "- Packaging: zipped - plugin.json has no dwcVersion, so there is no DWC interface to build"}\n- Left out of the ZIP: see the \"Leave out excluded files\" step (scripts/release-exclude.txt)\n${releaseSummary}\n`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `manifest=${manifestPath}\nplugin-name=${manifest.id}\nplugin-version=${manifest.version}\nplugin-dwc-version=${needsBuild ? manifest.dwcVersion : ""}\npackage-mode=${packageMode}\ndwc-ref=${selected}\nrelease-exists=${existingRelease ? "true" : "false"}\nrelease-url=${existingRelease?.html_url ?? ""}\nmake-latest=${channel === "latest"}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Release preflight\n\n${standalone ? `- No plugin.json: standalone release of \`${manifest.id}\`\n- Version: \`${manifest.version}\`${tag ? " (from the tag)" : " (test build)"}\n` : `- Plugin manifest: \`${manifestPath}\`\n- Plugin version: \`${manifest.version}\`\n`}- Release channel: \`${channel}\` (tag \`${expectedTag}\`${channel === "latest" ? ", marked Latest" : ", not marked Latest"})\n${needsBuild ? `- Packaging: built with DWC's plugin builder\n- Required DWC version: \`${manifest.dwcVersion}\`\n- Selected DWC release: \`${selected}\`` : standalone ? `- Packaging: the repository zipped as \`${manifest.id}-${manifest.version}.zip\` - no DWC build` : "- Packaging: zipped - plugin.json has no dwcVersion, so there is no DWC interface to build"}\n- Left out of the ZIP: see the \"Leave out excluded files\" step (scripts/release-exclude.txt)\n${releaseSummary}\n`);
           NODE
 
   build:
@@ -400,9 +439,10 @@ jobs:
       - uses: actions/setup-node@v6
         with: { node-version: 24 }
 
-      # Copy the Code folder (the one holding plugin.json) to $RUNNER_TEMP/plugin-src and remove from the
-      # copy what scripts/release-exclude.txt lists, plus __pycache__/, venv/, .git/, *.pyc and *.log (as
-      # plugin_tools does). The build or zip below uses the copy, so the checkout - including scripts/,
+      # Copy the Code folder (the one holding plugin.json - the whole repository if there is none) to
+      # $RUNNER_TEMP/plugin-src and remove from the copy what scripts/release-exclude.txt lists, plus
+      # __pycache__/, venv/, .git/, *.pyc and *.log (as plugin_tools does) - and for a standalone release,
+      # .github/, standalone-zip/ and the workflow's own scripts. The build or zip below uses the copy, so the checkout - including scripts/,
       # which later steps run - is never changed.
       - name: Leave out excluded files
         working-directory: plugin
@@ -507,6 +547,24 @@ jobs:
           unzip -Z1 "$ZIP" | grep -qx plugin.json || { echo "::error::plugin.json is not at the top of $ZIP."; exit 1; }
           unzip -l "$ZIP"
 
+      # No plugin.json: not a plugin, so nothing is built and there is no DWC dependency - the repository
+      # (the copy, without the excluded files) is zipped as it is: <repository>-<version>.zip, e.g.
+      # MyTool-1.2.3.zip, with the version from the tag. Folders left empty by the exclusions are dropped.
+      - name: Zip standalone ZIP (no plugin.json)
+        if: needs.resolve-dwc.outputs.package-mode == 'standalone'
+        env:
+          PLUGIN_VERSION: ${{ needs.resolve-dwc.outputs.plugin-version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/plugin-zip"
+          ZIP="$RUNNER_TEMP/plugin-zip/${PLUGIN_NAME:?}-${PLUGIN_VERSION:?}.zip"
+          find "$RUNNER_TEMP/plugin-src" -mindepth 1 -type d -empty -delete
+          if [ -z "$(ls -A "$RUNNER_TEMP/plugin-src")" ]; then
+            echo "::error::Nothing to zip: every file was left out (see the \"Leave out excluded files\" step)."
+            exit 1
+          fi
+          (cd "$RUNNER_TEMP/plugin-src" && zip -r -X -q "$ZIP" .)
+          unzip -l "$ZIP"
+
       - name: Prepare standalone ZIP assets
         if: startsWith(github.ref, 'refs/tags/')
         working-directory: plugin
@@ -544,6 +602,7 @@ jobs:
           DWC_SHA: ${{ steps.dwc.outputs.sha }}
           DWC_REF: ${{ steps.dwc.outputs.ref }}
           MANIFEST: ${{ needs.resolve-dwc.outputs.manifest }}
+          PLUGIN_VERSION: ${{ needs.resolve-dwc.outputs.plugin-version }}
         run: |
           {
             echo 'body<<__CHANGELOG_EOF__'
@@ -561,6 +620,7 @@ jobs:
         working-directory: plugin
         env:
           MANIFEST: ${{ needs.resolve-dwc.outputs.manifest }}
+          PLUGIN_VERSION: ${{ needs.resolve-dwc.outputs.plugin-version }}
         run: |
           {
             echo 'name<<__TITLE_EOF__'
@@ -590,5 +650,5 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ env.PLUGIN_NAME }}-plugin
+          name: ${{ env.PLUGIN_NAME }}-${{ needs.resolve-dwc.outputs.package-mode == 'standalone' && 'standalone' || 'plugin' }}
           path: ${{ runner.temp }}/plugin-zip/*.zip

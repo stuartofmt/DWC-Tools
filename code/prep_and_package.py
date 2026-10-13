@@ -608,7 +608,9 @@ def workflow_view(raw, replace_settings=False):
         problems.append(f"This folder is inside the git checkout {top}. GitHub only runs workflows from the top of a "
                         f"repository, so choose {top} instead.")
     if not manifests:
-        problems.append("There is no plugin.json in this folder or below it: this is not a DWC plugin.")
+        warnings.append("There is no plugin.json in this folder or below it, so this is not a DWC plugin: the workflow "
+                        "will release a standalone ZIP of the whole repository (<repository>-<version>.zip, the version "
+                        "taken from the tag), with no build and no DWC dependency.")
     elif len(manifests) > 1 and "/" in manifests[0]:
         problems.append("There is more than one plugin.json (" + ", ".join(manifests) + ") and none at the top: the "
                         "workflow would stop with an error. Remove the extra ones first.")

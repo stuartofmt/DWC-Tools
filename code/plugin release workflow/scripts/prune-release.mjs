@@ -12,14 +12,22 @@
  *                                             working copy is not emptied by mistake.
  *   --dir <folder>                            work on this folder instead of the Code folder (e.g. a copy of it)
  *
+ * A repository with no plugin.json is released as a standalone ZIP of the whole repository, so the
+ * repository root is pruned instead, and the release workflow's own files (.github/, the scripts it adds)
+ * and standalone-zip/ are always left out too.
+ *
  * Pattern rules (a subset of .gitignore) are described in scripts/release-exclude.txt.
  */
 import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { manifestPath, repoRoot } from "./manifest.mjs";
+import { isStandalone, manifestPath, repoRoot } from "./manifest.mjs";
 
 const EXCLUDE_FILE = join(repoRoot, "scripts", "release-exclude.txt");
-const ALWAYS = ["__pycache__/", "venv/", ".git/", "*.pyc", "*.log"];
+const standalone = isStandalone();
+const ALWAYS = ["__pycache__/", "venv/", ".git/", "*.pyc", "*.log",
+	// A standalone ZIP is the whole repository: leave out the release workflow itself and prebuilt ZIPs
+	...(standalone ? [".github/", "standalone-zip/", "scripts/manifest.mjs", "scripts/prune-release.mjs",
+		"scripts/release-*.mjs", "scripts/release-*.txt", "scripts/release.sh"] : [])];
 
 const argv = process.argv.slice(2);
 const args = new Set(argv);
@@ -61,8 +69,9 @@ function readPatterns() {
 
 const own = readPatterns().map(compile);
 const rules = [...ALWAYS.map(compile), ...own];
-const codeDir = dirIndex >= 0 ? resolve(argv[dirIndex + 1]) : dirname(join(repoRoot, manifestPath()));
-if (!existsSync(join(codeDir, "plugin.json"))) {
+const codeDir = dirIndex >= 0 ? resolve(argv[dirIndex + 1])
+	: standalone ? repoRoot : dirname(join(repoRoot, manifestPath()));
+if (!standalone && !existsSync(join(codeDir, "plugin.json"))) {
 	console.error(`${codeDir} has no plugin.json - is it the plugin's Code folder?`);
 	process.exit(2);
 }
@@ -85,7 +94,7 @@ const found = [];
 })(codeDir);
 
 const where = dirIndex >= 0 ? codeDir : relative(repoRoot, codeDir) || ".";
-console.log(`Code folder: ${where}  (exclude list: ${existsSync(EXCLUDE_FILE) ? relative(repoRoot, EXCLUDE_FILE) : "none"})`);
+console.log(`${standalone ? "Standalone (no plugin.json), zipping" : "Code folder:"} ${where}  (exclude list: ${existsSync(EXCLUDE_FILE) ? relative(repoRoot, EXCLUDE_FILE) : "none"})`);
 for (const { full, rel } of found) {
 	console.log(`${remove ? "removed" : "would remove"}: ${rel}`);
 	if (remove) rmSync(full, { recursive: true, force: true });

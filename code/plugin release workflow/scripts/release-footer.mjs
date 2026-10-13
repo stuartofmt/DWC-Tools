@@ -8,10 +8,28 @@
  * sbcRequired. A docs/Installation-Configuration.md in the repository is linked if present.
  * The DWC details come from the CI build environment (the release workflow sets these after it checks
  * out DuetWebControl), so it also reads sensibly when run locally.
+ *
+ * A repository with no plugin.json is released as a standalone ZIP, <name>-<version>.zip: the name and
+ * version come from PLUGIN_NAME and PLUGIN_VERSION (set by the release workflow), else the repository's
+ * name and the tag.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { needsDwcBuild, readManifest, repoRoot } from "./manifest.mjs";
+import { isStandalone, needsDwcBuild, readManifest, repoRoot, standaloneName } from "./manifest.mjs";
+
+if (isStandalone()) {
+	const name = process.env.PLUGIN_NAME || standaloneName();
+	const version = process.env.PLUGIN_VERSION || (process.env.GITHUB_REF_NAME || "").replace(/^v/, "");
+	const asset = `${name}-${version}.zip`;
+	process.stdout.write(`---
+
+### 📦 Download ${name}
+Download \`${asset}\` from the **Assets** below and unzip it.
+
+> 🔧 Standalone release - not a DWC plugin, so it does not depend on any DuetWebControl version.
+`);
+	process.exit(0);
+}
 
 const manifest = readManifest();
 const pkgVersion = manifest.version;

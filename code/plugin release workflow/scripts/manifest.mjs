@@ -6,9 +6,13 @@
  *   2. plugin.json at the repository root
  *   3. the shallowest plugin.json in a subfolder (alphabetical within a depth), skipping .git,
  *      node_modules and venv
+ *
+ * A repository with no plugin.json at all is not a plugin: the release workflow then zips the whole
+ * repository as a standalone ZIP (see isStandalone and standaloneName).
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -24,14 +28,42 @@ function findManifests(directory, depth = 0, found = []) {
 	return found;
 }
 
-/** Path of plugin.json relative to the repository root, e.g. "plugin.json" or "Code/plugin.json". */
-export function manifestPath() {
+/** Path of plugin.json relative to the repository root, or "" if the repository has none. */
+export function findManifestPath() {
 	if (process.env.MANIFEST) return process.env.MANIFEST;
 	if (existsSync(join(repoRoot, "plugin.json"))) return "plugin.json";
 	const found = findManifests(repoRoot)
 		.sort((a, b) => a.depth - b.depth || a.path.localeCompare(b.path));
-	if (found.length === 0) throw new Error(`No plugin.json found in ${repoRoot}`);
-	return relative(repoRoot, found[0].path);
+	return found.length ? relative(repoRoot, found[0].path) : "";
+}
+
+/** Path of plugin.json relative to the repository root, e.g. "plugin.json" or "Code/plugin.json". */
+export function manifestPath() {
+	const path = findManifestPath();
+	if (!path) throw new Error(`No plugin.json found in ${repoRoot}`);
+	return path;
+}
+
+/** Whether the repository has no plugin.json: it is released as a standalone ZIP of the whole repository. */
+export function isStandalone() {
+	return !findManifestPath();
+}
+
+/**
+ * The name of a standalone ZIP (<name>-<version>.zip): the repository's name - from GitHub Actions'
+ * GITHUB_REPOSITORY, else the git remote "origin", else the repository folder's name.
+ */
+export function standaloneName() {
+	const fromRepo = process.env.GITHUB_REPOSITORY?.split("/")[1];
+	if (fromRepo) return fromRepo;
+	try {
+		const url = execFileSync("git", ["-C", repoRoot, "remote", "get-url", "origin"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+		const name = basename(url).replace(/\.git$/, "");
+		if (name) return name;
+	} catch {
+		// no git, or no origin remote
+	}
+	return basename(repoRoot);
 }
 
 /** The parsed plugin.json. */
@@ -59,18 +91,19 @@ export function releaseChannel() {
 
 /**
  * Whether the plugin is built with DWC's plugin builder: plugin.json has a dwcVersion (it has a DWC
- * interface to compile). Without one the plugin is simply zipped, as plugin_tools does.
+ * interface to compile). Without one the plugin is simply zipped, as plugin_tools does. Never for a
+ * standalone repository (no plugin.json, so manifest is null).
  */
-export function needsDwcBuild(manifest = readManifest()) {
-	const value = manifest.dwcVersion;
+export function needsDwcBuild(manifest = isStandalone() ? null : readManifest()) {
+	const value = manifest?.dwcVersion;
 	return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
 /**
  * The suffix after v<version> in release tags: "-dwc<dwcVersion>", e.g. "-dwc3.7". Every tag carries
  * the DWC version it is built for, so branches for different DWC versions never clash. A plugin with
- * no dwcVersion is not tied to a DWC version, so its tags have no suffix ("").
+ * no dwcVersion (or a standalone repository) is not tied to a DWC version, so its tags have no suffix ("").
  */
-export function tagSuffix(manifest = readManifest()) {
+export function tagSuffix(manifest = isStandalone() ? null : readManifest()) {
 	return needsDwcBuild(manifest) ? `-dwc${manifest.dwcVersion}` : "";
 }

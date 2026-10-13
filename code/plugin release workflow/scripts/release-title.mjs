@@ -15,7 +15,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readManifest, tagSuffix } from "./manifest.mjs";
+import { isStandalone, readManifest, tagSuffix } from "./manifest.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -55,7 +55,10 @@ function cmp(a, b) {
 	return 0;
 }
 
-/** Resolve the title + list stats for a version (defaults to plugin.json's version). */
+/**
+ * Resolve the title + list stats for a version (defaults to plugin.json's version; for a standalone
+ * repository with no plugin.json, to PLUGIN_VERSION or the tag being released).
+ */
 export function pickTitle(version) {
 	const titlesFile = join(here, "release-titles.txt");
 	const titles = (existsSync(titlesFile) ? readFileSync(titlesFile, "utf8") : "")
@@ -64,7 +67,8 @@ export function pickTitle(version) {
 		.filter((l) => l && !l.startsWith("#"));
 
 	const suffix = tagSuffix();
-	const current = ver(version || readManifest().version).replace(DWC_SUFFIX, "");
+	const fallback = isStandalone() ? process.env.PLUGIN_VERSION || process.env.GITHUB_REF_NAME || "" : readManifest().version;
+	const current = ver(version || fallback).replace(DWC_SUFFIX, "");
 
 	// Only this branch's tags: those ending in its -dwc suffix.
 	const tags = git(["tag", "-l", "v*"]).split("\n").map((t) => t.trim()).filter(Boolean)

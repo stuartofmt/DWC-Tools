@@ -10,6 +10,10 @@
 #        - use this tag: pushes the branch, creates the tag and pushes it on its own
 #        - new tag:      tells you to update and commit plugin.json first, then exits
 #
+# With no plugin.json the repository is not a plugin: the Release workflow zips the whole repository as a
+# standalone ZIP, and the version comes from the tag. This script then shows the latest v* tag, asks for
+# the version to release and uses the tag v<version>.
+#
 # Pushing the tag starts the Release workflow (.github/workflows/release.yml). Approve the run in the
 # repository's Actions tab when it pauses at dwc-release-approval.
 #
@@ -23,9 +27,8 @@ cd "$(git rev-parse --show-toplevel)"
 # .git, node_modules and venv). The Release workflow stops if there is more than one, so warn about that.
 MANIFESTS=$(find . \( -name .git -o -name node_modules -o -name venv \) -prune -o -type f -name plugin.json -print \
 	| awk -F/ '{ print NF "\t" $0 }' | sort -n -k1,1 -k2 | cut -f2- | sed 's|^\./||')
-[ -n "$MANIFESTS" ] || { echo "Error: no plugin.json found in this repository."; exit 1; }
 MANIFEST=$(echo "$MANIFESTS" | head -n1)
-if [ "$(echo "$MANIFESTS" | wc -l)" -gt 1 ]; then
+if [ -n "$MANIFESTS" ] && [ "$(echo "$MANIFESTS" | wc -l)" -gt 1 ]; then
 	echo "Warning: more than one plugin.json found - using $MANIFEST. Others:"
 	echo "$MANIFESTS" | tail -n +2 | sed 's/^/  /'
 	echo "(The Release workflow stops if there is more than one plugin.json in subfolders.)"
@@ -33,15 +36,28 @@ if [ "$(echo "$MANIFESTS" | wc -l)" -gt 1 ]; then
 fi
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$MANIFEST")
-DWC_VERSION=$(python3 -c "import json,sys; v=json.load(open(sys.argv[1])).get('dwcVersion'); print('' if v is None else str(v).strip())" "$MANIFEST")
-if [ -z "$DWC_VERSION" ]; then
-	TAG="v$VERSION"   # No DWC interface: the plugin is zipped, not built, and is not tied to a DWC version
+if [ -z "$MANIFEST" ]; then
+	# No plugin.json: a standalone release of the whole repository, its version only in the tag
+	echo "No plugin.json in this repository: it will be released as a standalone ZIP of the repository."
+	LATEST=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+	echo "Latest tag: ${LATEST:-none}"
+	read -rp "Version to release (e.g. 1.2.3): " VERSION
+	VERSION=${VERSION#v}
+	[[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]] \
+		|| { echo "Error: \"$VERSION\" is not a version number such as 1.2.3."; exit 1; }
+	DWC_VERSION=""
+	TAG="v$VERSION"
 else
-	# The tag includes dwcVersion, so it must be a plain version (not e.g. "auto"); same rule as the Release workflow.
-	[[ "$DWC_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]] \
-		|| { echo "Error: $MANIFEST needs a numeric dwcVersion for the tag name, not \"$DWC_VERSION\"."; exit 1; }
-	TAG="v$VERSION-dwc$DWC_VERSION"
+	VERSION=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$MANIFEST")
+	DWC_VERSION=$(python3 -c "import json,sys; v=json.load(open(sys.argv[1])).get('dwcVersion'); print('' if v is None else str(v).strip())" "$MANIFEST")
+	if [ -z "$DWC_VERSION" ]; then
+		TAG="v$VERSION"   # No DWC interface: the plugin is zipped, not built, and is not tied to a DWC version
+	else
+		# The tag includes dwcVersion, so it must be a plain version (not e.g. "auto"); same rule as the Release workflow.
+		[[ "$DWC_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]] \
+			|| { echo "Error: $MANIFEST needs a numeric dwcVersion for the tag name, not \"$DWC_VERSION\"."; exit 1; }
+		TAG="v$VERSION-dwc$DWC_VERSION"
+	fi
 fi
 
 # Release channel (scripts/release-channel.txt, default "latest"; same rules as scripts/manifest.mjs).
@@ -55,8 +71,12 @@ case "$CHANNEL" in
 esac
 
 echo "Branch:       $BRANCH"
-echo "Version:      $VERSION  (from $MANIFEST)"
-echo "DWC version:  ${DWC_VERSION:-none (no DWC interface - the plugin is zipped, not built)}"
+if [ -n "$MANIFEST" ]; then
+	echo "Version:      $VERSION  (from $MANIFEST)"
+	echo "DWC version:  ${DWC_VERSION:-none (no DWC interface - the plugin is zipped, not built)}"
+else
+	echo "Version:      $VERSION  (standalone - no plugin.json)"
+fi
 echo "Channel:      $CHANNEL$([ "$CHANNEL" = latest ] && echo "  (Release marked Latest)" || echo "  (Release not marked Latest)")"
 echo "Release tag:  $TAG"
 echo
@@ -85,6 +105,10 @@ echo
 case "$CHOICE" in
 	1) ;;
 	2)
+		if [ -z "$MANIFEST" ]; then
+			echo "Run this script again and enter the new version."
+			exit 0
+		fi
 		echo "To use a new tag:"
 		echo "  1. Change \"version\" in $MANIFEST to the new version number."
 		echo "  2. Commit that change (and push it)."
@@ -107,7 +131,7 @@ if $USED_LOCAL || $USED_REMOTE; then
 fi
 
 # The tag is put on the current commit, so plugin.json must be committed with this version.
-if ! git diff --quiet HEAD -- "$MANIFEST"; then
+if [ -n "$MANIFEST" ] && ! git diff --quiet HEAD -- "$MANIFEST"; then
 	echo "Error: $MANIFEST has uncommitted changes. Commit it first, then run this script again."
 	exit 1
 fi

@@ -84,7 +84,7 @@ could not be created, that package is missing and has to be installed once by th
 <p>The workflow is kept in the <code>plugin release workflow</code> folder next to this app's program, laid out as it goes into a plugin's folder:</p>
 <pre>.github/workflows/release.yml      the workflow: builds the plugin's ZIP on GitHub and publishes the release
 .github/workflows/release.yml.md   its notes: how to release, which DWC version is used, one-time setup
-scripts/release.sh                 run it to tag and release the version in plugin.json
+scripts/release.sh                 run it to tag and release the version in plugin.json (or the one you enter)
 scripts/*.mjs                      helpers the workflow runs (release title, notes, files left out, ...)
 scripts/release-channel.txt        settings: "latest" or "maintenance" for this branch
 scripts/release-exclude.txt        settings: files to leave out of the ZIP
@@ -101,8 +101,10 @@ scripts/release-titles.txt         settings: the names used for release titles</
       that is when the workflow reaches GitHub.</li>
 </ol>
 <p>Copy is refused when the folder is inside a git checkout but is not its top (GitHub only runs workflows from the top's
-<code>.github</code> folder), when there is no <code>plugin.json</code>, or when there is more than one and none at the top (the workflow
-would stop with an error). A folder that is not a git repository yet can be used: the workflow runs once it is on GitHub.</p>
+<code>.github</code> folder), or when there is more than one <code>plugin.json</code> and none at the top (the workflow
+would stop with an error). With no <code>plugin.json</code> at all the folder is not a plugin: Copy still works, and the workflow then
+releases a standalone ZIP of the whole repository, <code>&lt;repository&gt;-&lt;version&gt;.zip</code> with the version taken from the tag,
+without building anything or depending on DWC. A folder that is not a git repository yet can be used: the workflow runs once it is on GitHub.</p>
 <p>Once per repository on GitHub: allow Actions (Settings → Actions → General) and add an environment named exactly
 <code>dwc-release-approval</code> with yourself as a required reviewer (Settings → Environments). <code>release.yml.md</code> explains this
 and how to release.</p>
