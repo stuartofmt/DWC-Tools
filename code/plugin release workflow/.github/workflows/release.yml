@@ -166,6 +166,22 @@ name: Release
 #                    the ZIP from the copy with DWC's scripts/build-plugin.js - or, with no dwcVersion
 #                    or no plugin.json, zip the copy.
 #   4. output      - automatic: publish the GitHub Release. Manual: provide the ZIP as an artifact.
+#
+# ---------------------------------------------------------------------------------------------------
+# One-time setup for a repository (the approval pause needs it)
+# ---------------------------------------------------------------------------------------------------
+#   - Settings -> Actions -> General: "Allow all actions and reusable workflows" (forks start with Actions off).
+#   - Settings -> Environments -> New environment named exactly dwc-release-approval. Tick Required reviewers,
+#     add yourself, leave Prevent self-review unticked, and save. Without this the run never pauses.
+#   If a run does not pause for approval:
+#     1. The environment was never set up: GitHub creates dwc-release-approval itself on the first run, with no
+#        rules - being listed under Environments does not mean Required reviewers is set. Open it and check.
+#     2. Required reviewers is not ticked, has no reviewer, or was not saved.
+#     3. The repository is private on a free GitHub plan: Required reviewers only work in public repositories
+#        unless the account has a paid plan (Pro, Team or Enterprise), so the rule is ignored.
+#     4. The name is not exactly dwc-release-approval: the run then uses a new, unprotected environment.
+#     5. The repository has an older release.yml without the approval step.
+#   With Prevent self-review ticked and you as the only reviewer, the run pauses but you cannot approve it.
 
 on:
   push:

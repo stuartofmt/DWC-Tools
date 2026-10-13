@@ -57,6 +57,8 @@ Pushing the tag starts the workflow. It first checks the version and chooses whi
 - If a Release for this tag does not exist yet, approving creates it.
 - If a Release for this tag **already** exists, approving **overwrites** its ZIP files, title and notes. Reject if you do not want that.
 
+The run only pauses if the repository has been set up for it - see [One-time setup for a repository](#one-time-setup-for-a-repository). Otherwise it goes straight on and publishes.
+
 ### 4. The Release is published
 
 After approval the workflow builds the ZIP and publishes the GitHub Release automatically:
@@ -157,3 +159,15 @@ The scripts take the plugin's name, ZIP name and links from `plugin.json`, so th
 
 - **Actions enabled:** Settings → Actions → General → "Allow all actions and reusable workflows". Forks have Actions turned off until you enable them.
 - **Approval environment:** Settings → Environments → **New environment** named exactly `dwc-release-approval`. Tick **Required reviewers**, add yourself, leave **Prevent self-review** unticked, and save. Without required reviewers, runs do not pause.
+
+### If the run does not pause for approval
+
+A run that goes straight from **resolve-dwc** to **build** without asking has no required reviewers to wait for. Check, in this order:
+
+1. **The environment was never set up.** If the workflow runs before `dwc-release-approval` exists, GitHub creates it by itself - with no protection rules. So it being listed under Settings → Environments does not mean it is set up: open it and check that **Required reviewers** is ticked with a reviewer added.
+2. **Required reviewers is not ticked**, or no reviewer was added, or the settings were not saved.
+3. **The repository is private on a free GitHub plan.** Required reviewers only work in public repositories unless the account has a paid plan (Pro, Team or Enterprise); otherwise the rule is ignored and runs never pause. Make the repository public, or upgrade.
+4. **The name is not exactly `dwc-release-approval`** (e.g. `dwc_release_approval`). The run then uses a different, unprotected environment, which GitHub creates for it - the run's page shows its name.
+5. **The repository has an older `release.yml`** without the approval step: compare it with this one, or copy the workflow again with Prep_and_Package.
+
+If **Prevent self-review** is ticked and you are the only reviewer, the run does pause, but you cannot approve your own run: untick it.
