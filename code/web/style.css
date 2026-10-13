@@ -15,8 +15,7 @@
  .dirs .v-list-item-title{font:14px ui-monospace,monospace;word-break:break-all;white-space:normal}
  .dirs .project .v-list-item-title{font-weight:700}
  .main-select{max-width:20rem}
- .exfiles .v-label{font:13px ui-monospace,monospace;opacity:1}
- .zips td.n{text-align:right;font-variant-numeric:tabular-nums}
+ .wf-plan code{font-size:.85rem}
  .doc h3{margin:1.75rem 0 .5rem;font-size:1.2rem}
  .doc p,.doc li{line-height:1.5}
  .doc p{margin:.75rem 0}

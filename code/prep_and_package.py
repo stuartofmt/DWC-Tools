@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Prep and Package - one small web app that prepares and releases standalone Python programs.
+"""Prep and Package - one small web app that prepares standalone Python programs and DWC plugin folders.
   /          Home        choose a tool
   /prepare   Prepare     make the project's requirements.txt from its imports, create its venv and install into it
-  /makezip   Make Zip    build standalone-zip/<name>-<version>.zip (or standalone-zip/<name>.zip) from the project
+  /workflow  Copy Plugin Release Workflow   copy the GitHub release workflow for DWC plugins into a plugin's folder
   /settings  Settings    the folder project browsing starts in, the preferred port and where to listen
   /readme    Instructions on use
 
@@ -15,12 +15,12 @@ The project's name is its folder name.
 
 Prepare works on the project folder itself: it adds any missing packages the code folder imports to requirements.txt
 (making <code folder>/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
-checks that the venv can import every package, adds a run.sh / run.bat launcher if there is none, and adds (or
-brings up to date) .github/workflows/release-zips.yml, which attaches the release zips to a GitHub release.
+checks that the venv can import every package, and adds a run.sh / run.bat launcher if there is none.
 
-The zip unzips to a <name>/ folder holding README.md, the code folder and an install.py made by this app
-(see INSTALL_TEMPLATE), so the release can be installed on another computer without this app, plus
-run.sh and run.bat that start install.py with the system Python (see INSTALL_LAUNCHERS).
+Copy Plugin Release Workflow copies the files in the "plugin release workflow" folder next to this script
+(.github/workflows/release.yml and its notes, and scripts/) into the top of a plugin's git checkout on disk; it never
+commits or pushes, so the files reach GitHub when the user commits and pushes them. The workflow's
+settings files (WORKFLOW_SETTINGS) belong to the plugin, so one already there is kept unless asked to replace it.
 
 Nothing is installed system-wide (no apt, no sudo): the venv is created and requirements.txt is installed into it
 with the venv's own pip, which also works where the system Python is "externally managed".
@@ -45,6 +45,7 @@ The settings, the recent projects and each project's options are stored together
 .prep_and_package.json, in the same folder as this script.
 """
 import ast
+import filecmp
 import json
 import logging
 import os
@@ -60,10 +61,8 @@ import threading
 import time
 import urllib.parse
 import webbrowser
-import zipfile
-from glob import glob
 
-from flask import Flask, Response, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 
 PLATFORM = platform.system()          # "Linux", "Windows", ...
 IS_WINDOWS = PLATFORM == "Windows"    # everything else is handled like Linux
@@ -78,16 +77,11 @@ HOST = "127.0.0.1"
 PORT = 0
 SETTINGS_NAME = ".prep_and_package.json"
 SETTINGS_FILE = os.path.join(SCRIPT_DIR, SETTINGS_NAME)
-RECENT_MAX = 8   # most recent projects remembered
-FILES_LIMIT = 3000   # most files Make Zip's Exclude files list shows
+RECENT_MAX = 8   # most recent projects (and plugin folders) remembered
 README = "README.md"
-# Never part of a release, and never looked in for .py files. Other files can be left out with Make Zip's
-# Exclude files list (remembered per project). At the top of the project, the folder Make Zip puts zips in and the
-# dist folder (where other tools, such as plugin_tool, put theirs) are left out too.
+# Never looked in for .py files, and nor are a project's own folders of release zips at its top
 SKIP_DIRS = ("__pycache__", "venv", ".venv", ".git", "node_modules")
-ZIP_DIR = "standalone-zip"
-SKIP_TOP_DIRS = (ZIP_DIR, "dist")
-SKIP_SUFFIXES = (".pyc",)
+SKIP_TOP_DIRS = ("standalone-zip", "dist")
 SEARCH_LIMIT = 2000     # most folders looked in for a project's .py files
 PROGRAMS_LIMIT = 1000   # most .py files offered as a project's main program
 # Project options until they are changed on a tool page
@@ -260,9 +254,8 @@ class Job:
         return {"run": self.run, "total": len(lines), "lines": lines[n:], "running": self.busy}
 
 
-zip_job = Job()       # Make Zip
 prepare_job = Job()   # Prepare
-JOBS = (zip_job, prepare_job)
+JOBS = (prepare_job,)
 
 
 def shut_down(reason):
@@ -479,19 +472,6 @@ def program_version(project, main):
     return m.group(1) if m and VERSION_OK.fullmatch(m.group(1)) else None
 
 
-def release_zips(project):
-    """The zip files Make Zip made, in the project's standalone-zip folder, newest first."""
-    out = []
-    for f in glob(os.path.join(project, ZIP_DIR, "*.zip")):
-        try:
-            st = os.stat(f)
-        except OSError:
-            continue
-        out.append({"name": os.path.basename(f), "size": st.st_size, "mtime": st.st_mtime,
-                    "when": time.strftime("%Y-%m-%d %H:%M", time.localtime(st.st_mtime))})
-    return sorted(out, key=lambda z: z["mtime"], reverse=True)
-
-
 def venv_python(venv):
     return os.path.join(venv, "Scripts", "python.exe") if IS_WINDOWS else os.path.join(venv, "bin", "python")
 
@@ -510,12 +490,7 @@ def project_view(path, data=None):
                     has_readme=os.path.isfile(os.path.join(path, README)),
                     requirements=requirements_file(path, opts),
                     venv=os.path.isfile(venv_python(os.path.join(path, "venv"))),
-                    launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "",
-                    workflow=release_workflow_state(path),
-                    zips=release_zips(path))
-        files, excluded, truncated = zip_files(path, opts, data)
-        view.update(files=files, excluded=excluded, files_truncated=truncated,
-                    needed=sorted(needed_files(path, opts)))
+                    launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "")
     return view
 
 
@@ -538,348 +513,140 @@ def check_project(raw, need_requirements=True):
     return path, opts, None
 
 
-# ---------- the install.py that goes into each release ----------
-# Filled in by make_install_py(). Its job is that of the original scanCam install.py, with the project's
-# name, main program and packages filled in. It goes into each release, to install it on another computer.
-# The install folder can be given as an argument, and --source names the folder holding the program.
-INSTALL_TEMPLATE = r'''#!/usr/bin/env python3
-"""
-One-time setup for __NAME__: asks for an install directory, copies the
-program there, then creates its Python venv and installs requirements.txt into it with pip.
-Nothing is installed system-wide, so no sudo is needed.
-
-Run from the unzipped folder with: ./run.sh or python3 install.py  (on Windows: run.bat or py install.py)
-The install directory is chosen in a folder window when there is a desktop and Python has tkinter
-(otherwise it is asked for in the terminal; --no-gui always asks in the terminal).
-It can also be given straight away: python3 install.py /home/pi/__NAME__
-Once installed, the program is started with its launcher (run.sh, or run.bat on Windows);
-add --no-run to install without starting it.
-Running it again updates the program files and recreates the venv.
-(Made by prep_and_package.py.)
-"""
-import argparse
-import os
-import shutil
-import subprocess
-import sys
-from pathlib import Path
-
-NAME = __NAME_R__
-MAIN = __MAIN_R__            # the program, relative to the install directory
-REQUIREMENTS = __REQ_R__     # what pip installs into the venv
-SYSTEM_SITE_PACKAGES = __SITE_R__   # whether the venv can also use Python packages already installed on the system
-
-IS_WINDOWS = sys.platform == 'win32'
-
-here = Path(__file__).resolve().parent
-default_target = Path.home() / NAME
-# Copied into the install directory; the venv and launcher are created there.
-program_files = __FILES_R__
-MAIN_WINDOWS = MAIN.replace('/', '\\')
-
-if IS_WINDOWS:
-    launcher_name = 'run.bat'
-    launcher_script = ('@echo off\n'
-                       f'rem Start {NAME} using its venv (recreate it with install.py).\n'
-                       'cd /d "%~dp0"\n'
-                       f'venv\\Scripts\\python.exe -u {MAIN_WINDOWS} %*\n')
-else:
-    launcher_name = 'run.sh'
-    launcher_script = ('#!/bin/bash\n'
-                       f'# Start {NAME} using its venv (recreate it with python3 install.py).\n'
-                       'cd "$(dirname "$0")"\n'
-                       f'exec venv/bin/python -u {MAIN} "$@"\n')
+# ---------- Copy Plugin Release Workflow ----------
+# The GitHub release workflow for DWC plugins lives in the "plugin release workflow" folder next to this script, laid
+# out as it goes into a plugin's folder: .github/workflows/release.yml (and its notes) and scripts/. It is copied into
+# the top of the plugin's git checkout on disk, as GitHub only runs workflows from the top of a repository. Only files on
+# disk are written: nothing is committed or pushed.
+WORKFLOW_DIR = os.path.join(SCRIPT_DIR, "plugin release workflow")
+# The workflow's settings: they belong to the plugin, so a copy already in its folder is kept unless asked otherwise
+WORKFLOW_SETTINGS = ("scripts/release-channel.txt", "scripts/release-exclude.txt", "scripts/release-titles.txt")
+# Not looked in for plugin.json (as the workflow and release.sh skip them)
+MANIFEST_SKIP = (".git", "node_modules", "venv")
+MANIFEST_DEPTH = 3   # how far below a folder Browse looks for a plugin.json when marking plugin folders
 
 
-def gui():
-    """A hidden Tk window for showing dialogs, or None when there is no desktop or Python has no tkinter
-    (e.g. over SSH, on a Pi without a screen, or Debian without the python3-tk package). Says why when there is none."""
-    if not IS_WINDOWS and not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
-        print("No folder window: no desktop here (DISPLAY is not set), so asking in the terminal")
-        return None
-    try:
-        import tkinter
-        root = tkinter.Tk()
-    except Exception as e:
-        print(f"No folder window ({type(e).__name__}: {e}), so asking in the terminal")
-        return None
-    # A hidden window's "on top" setting does not reach its dialogs on every desktop (they can open behind an
-    # editor or the terminal), so show a tiny transparent window, raised and focused, for the dialogs to open over
-    root.title(f"Install {NAME}")
-    root.geometry('1x1+0+0')
-    try:
-        root.attributes('-alpha', 0.0)
-    except Exception:
-        pass
-    root.attributes('-topmost', True)
-    root.deiconify()
-    root.lift()
-    root.focus_force()
-    root.update()
-    return root
+def workflow_files():
+    """The workflow's files, as paths relative to its folder with forward slashes."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(WORKFLOW_DIR):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        out += [os.path.relpath(os.path.join(dirpath, n), WORKFLOW_DIR).replace(os.sep, "/") for n in sorted(filenames)]
+    return out
 
 
-def ask_target_gui(root) -> Path:
-    """Choose the install directory in a folder window. Returns None if cancelled."""
-    from tkinter import filedialog, messagebox
-    while True:
-        picked = filedialog.askdirectory(
-            parent=root, initialdir=str(Path.home()), mustexist=False,
-            title=f"Choose where to install {NAME} (a {NAME} folder is made in it), or type a new folder")
-        if not picked:
-            return None
-        picked = Path(picked).expanduser().resolve()
-        # A folder typed in that does not exist yet is made and used as it is. Choosing an existing install (a folder
-        # called NAME) installs over it; any other existing folder gets a NAME folder made in it
-        target = picked if not picked.exists() or picked.name == NAME else picked / NAME
-        if target.exists() and not target.is_dir():
-            messagebox.showerror(f"Install {NAME}", f"{target} is a file, not a folder.", parent=root)
-            continue
-        answer = messagebox.askyesnocancel(
-            f"Install {NAME}", f"Install {NAME} into\n\n{target}\n\n"
-            "Yes to install, No to choose another folder, Cancel to stop.", parent=root)
-        if answer is None:
-            return None
-        if answer:
-            return target
-
-
-def ask_target_text() -> Path:
-    try:
-        answer = input(f"Enter the directory to install {NAME} into [{default_target}]: ").strip()
-    except EOFError:
-        # No terminal to answer from (e.g. piped input), so take the default.
-        answer = ''
-    return Path(answer).expanduser().resolve() if answer else default_target
-
-
-def show_error(root, text):
-    """Report a failed install in a message box too, when the folder was chosen in a window."""
-    if root is not None:
-        from tkinter import messagebox
-        messagebox.showerror(f"Install {NAME}", text, parent=root)
-
-
-def copy_program(source: Path, target: Path):
-    target.mkdir(parents=True, exist_ok=True)
-    if target != source:
-        print(f"Copying {NAME} into {target}")
-        for name in program_files:
-            path = source / name
-            if path.is_dir():
-                shutil.copytree(path, target / name, dirs_exist_ok=True,
-                                ignore=shutil.ignore_patterns('__pycache__', '*.pyc', 'venv'))
-            elif path.is_file():
-                shutil.copy2(path, target / name)
-    launcher = target / launcher_name
-    launcher.write_text(launcher_script)
-    launcher.chmod(0o755)
-
-
-def create_venv(target: Path):
-    # Use the base Python, since sys.executable may be inside the venv being deleted.
-    venv = target / 'venv'
-    if IS_WINDOWS:
-        python = Path(sys.base_prefix) / 'python.exe'
-        venv_python = venv / 'Scripts' / 'python.exe'
-        venv_options = []
-    else:
-        python = Path(sys.base_prefix) / 'bin' / 'python3'
-        venv_python = venv / 'bin' / 'python'
-        venv_options = ['--system-site-packages'] if SYSTEM_SITE_PACKAGES else []
-    shutil.rmtree(venv, ignore_errors=True)
-    print(f"Creating the venv in {venv}")
-    if subprocess.run([str(python), '-m', 'venv', *venv_options, str(venv)]).returncode != 0:
-        # Debian / Raspberry Pi OS leave venv's pip out of the base Python package
-        sys.exit("Could not create the venv. On Debian or Raspberry Pi OS the venv module needs the python3-venv "
-                 "package, which the system administrator installs with: sudo apt install python3-venv")
-    # The venv's own pip, so this works where the system Python is "externally managed"
-    subprocess.run([str(venv_python), '-m', 'pip', 'install', '-r', str(target / REQUIREMENTS)], check=True)
-    print('venv ready')
-
-
-def main():
-    parser = argparse.ArgumentParser(description=f'Install {NAME}')
-    parser.add_argument('target', nargs='?', help=f'the directory to install into (asked for when left out)')
-    parser.add_argument('--source', help='the folder holding the program (default: the folder this script is in)')
-    parser.add_argument('--no-run', action='store_true', help=f'do not start {NAME} once it is installed')
-    parser.add_argument('--no-gui', action='store_true', help='ask for the install directory in the terminal, not in a window')
-    args = parser.parse_args()
-    source = Path(args.source).expanduser().resolve() if args.source else here
-    root = None
-    if args.target:
-        target = Path(args.target).expanduser().resolve()
-    else:
-        root = None if args.no_gui else gui()
-        target = ask_target_gui(root) if root is not None else ask_target_text()
-        if target is None:
-            sys.exit("Install cancelled")
-        print(f"Installing {NAME} into {target}", flush=True)
-    try:
-        copy_program(source, target)
-        create_venv(target)
-    except SystemExit as e:   # create_venv's own message (the venv module is missing)
-        show_error(root, str(e))
-        raise
-    except subprocess.CalledProcessError as e:
-        message = f"Install failed: {' '.join(e.cmd)} exited with {e.returncode}"
-        show_error(root, message + "\n\nThe terminal shows what went wrong.")
-        sys.exit(message)
-    except OSError as e:
-        show_error(root, f"Install failed: {e}")
-        sys.exit(f"Install failed: {e}")
-    if root is not None:
-        root.destroy()
-    launcher = target / launcher_name
-    print()
-    print(f"{NAME} is installed in {target}. Start it with: {launcher}")
-    if args.no_run:
-        return
-    print(f"Starting {NAME} with {launcher}")
-    print(flush=True)   # before the program's own output
-    try:
-        # run.bat needs cmd; run.sh is executable
-        code = subprocess.call(['cmd', '/c', str(launcher)] if IS_WINDOWS else [str(launcher)], cwd=str(target))
-    except KeyboardInterrupt:   # Ctrl+C stops the program; nothing more to report
-        code = 130
-    except OSError as e:
-        sys.exit(f"Could not start {launcher}: {e}")
-    sys.exit(code)
-
-
-if __name__ == '__main__':
-    main()
-'''
-
-
-# Beside install.py in each release, so it can be started without typing the Python command.
-# The zip may be unzipped on either system, so it holds both.
-INSTALL_LAUNCHERS = {
-    "run.sh": ('#!/bin/sh\n'
-               '# Install the program (made by prep_and_package.py). Arguments go to install.py.\n'
-               'cd "$(dirname "$0")"\n'
-               'exec python3 install.py "$@"\n'),
-    "run.bat": ('@echo off\r\n'
-                'rem Install the program (made by prep_and_package.py). Arguments go to install.py.\r\n'
-                'cd /d "%~dp0"\r\n'
-                'where py >nul 2>nul\r\n'
-                'if %errorlevel%==0 (py -3 install.py %*) else (python install.py %*)\r\n'
-                'if errorlevel 1 pause\r\n'),
-}
-
-
-def make_install_py(name, opts, requirements, files):
-    """The install.py for a project, with its name, options, requirements.txt (relative path) and the top-level
-    files and folders it copies (those of the zip) filled in."""
-    values = {"__NAME_R__": repr(name), "__MAIN_R__": repr(opts["main"]), "__REQ_R__": repr(requirements),
-              "__SITE_R__": repr(opts["site_packages"]), "__FILES_R__": repr(sorted(files))}
-    text = INSTALL_TEMPLATE
-    for key, value in values.items():
-        text = text.replace(key, value)
-    return text.replace("__NAME__", name)
-
-
-# ---------- Make Zip: the job ----------
-# Made by Make Zip itself, so never taken from the project folder
-MADE_FILES = {"install.py", "run.sh", "run.bat"}
-
-
-def release_files(project, opts, exclude=()):
-    """(path on disk, path inside the zip below <name>/) for README.md, requirements.txt and everything in the
-    code folder, leaving out the paths (relative to the project) in exclude."""
-    skip, given = set(exclude), set()
-    for top in (README, "requirements.txt"):
-        path = os.path.join(project, top)
-        if os.path.isfile(path) and top not in skip:
-            given.add(top)
-            yield path, top
-    top_dir = os.path.join(project, code_dir(opts))
-    for dirpath, dirnames, filenames in os.walk(top_dir):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not (dirpath == project and d in SKIP_TOP_DIRS))
-        for name in sorted(filenames):
-            if name.endswith(SKIP_SUFFIXES) or (dirpath == project and name in MADE_FILES):
-                continue
-            path = os.path.join(dirpath, name)
-            rel = os.path.relpath(path, project).replace(os.sep, "/")
-            if rel not in skip and rel not in given:
-                yield path, rel
-
-
-def top_level(files):
-    """The top-level names (what install.py copies) of paths inside a release."""
-    return {rel.split("/")[0] for rel in files}
-
-
-def needed_files(project, opts):
-    """Files a release cannot do without (install.py runs the main program and installs requirements.txt)."""
-    return {opts["main"], requirements_file(project, opts)} - {""}
-
-
-def zip_files(project, opts, data=None):
-    """For Make Zip's Exclude files list: (files, excluded, truncated). files are the paths (relative to the project)
-    that can go into the zip, at most FILES_LIMIT of them; excluded the ones ticked last time for this project
-    that still exist (none until something has been ticked)."""
-    files = []
-    for _, rel in release_files(project, opts):
-        files.append(rel)
-        if len(files) > FILES_LIMIT:
+def plugin_manifests(repo):
+    """The plugin.json files in repo, relative to it: the one at the top first, then the shallowest, as the workflow
+    and release.sh choose them (they use the first)."""
+    found = []
+    for seen, (dirpath, dirnames, filenames) in enumerate(os.walk(repo)):
+        if seen >= SEARCH_LIMIT:
             break
-    truncated = len(files) > FILES_LIMIT
-    files = files[:FILES_LIMIT]
-    saved = (data or load_store())["projects"].get(project)
-    saved = saved.get("exclude") if isinstance(saved, dict) else None
-    present = set(files)
-    excluded = [x for x in saved if isinstance(x, str) and x in present] if isinstance(saved, list) else []
-    needed = needed_files(project, opts)
-    return files, [x for x in excluded if x not in needed], truncated
+        dirnames[:] = [d for d in dirnames if d not in MANIFEST_SKIP]
+        if "plugin.json" in filenames:
+            found.append(os.path.relpath(os.path.join(dirpath, "plugin.json"), repo).replace(os.sep, "/"))
+    return sorted(found, key=lambda p: (p.count("/"), p.lower()))
 
 
-def run_zip_job(lines, project, opts, exclude):
-    job = zip_job
-    ok = False
-    name = os.path.basename(project)
-    out = None
-    try:
-        version = program_version(project, opts["main"])
-        lines.append(f"=== Make zip of {name}" + (f" version {version} ===" if version else " (no version set) ==="))
-        out = os.path.join(project, ZIP_DIR, f"{name}-{version}.zip" if version else f"{name}.zip")
-        os.makedirs(os.path.dirname(out), exist_ok=True)
-        added = []
-        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as z:
-            if exclude:
-                lines.append("Left out (Exclude files): " + ", ".join(exclude))
-            for path, rel in release_files(project, opts, exclude):
-                if job.stopping:
-                    raise InterruptedError
-                z.write(path, f"{name}/{rel}")
-                lines.append(f"  adding: {name}/{rel}")
-                added.append(rel)
-            z.writestr(f"{name}/install.py", make_install_py(name, opts, requirements_file(project, opts), top_level(added)))
-            lines.append(f"  adding: {name}/install.py   (made by this app for {opts['main']})")
-            for launcher, text in INSTALL_LAUNCHERS.items():
-                info = zipfile.ZipInfo(f"{name}/{launcher}", time.localtime()[:6])
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.create_system = 3                  # Unix, so unzip keeps the mode below
-                info.external_attr = 0o100755 << 16     # executable
-                z.writestr(info, text)
-                lines.append(f"  adding: {name}/{launcher}   (runs install.py with the system Python)")
-        st = os.stat(out)
-        lines.append("")
-        lines.append("Resulting ZIP file")
-        lines.append(f"{st.st_size:>10} bytes  {time.strftime('%Y-%m-%d %H:%M', time.localtime(st.st_mtime))}  {out}")
-        ok = True
-    except InterruptedError:
-        pass
-    except Exception as e:
-        lines.append(f"Error: {e}")
-    finally:
-        if not ok and out and os.path.exists(out):
-            os.remove(out)   # never leave a partial zip behind
-        if job.stopping:
-            lines.append("--- stopped ---")
+def has_manifest(folder, depth=MANIFEST_DEPTH):
+    """Whether there is a plugin.json in folder or up to depth levels below it (for marking folders in Browse)."""
+    level = [folder]
+    for _ in range(depth + 1):
+        below = []
+        for f in level:
+            if os.path.isfile(os.path.join(f, "plugin.json")):
+                return True
+            below += [os.path.join(f, d) for d in subdirs(f) if d not in MANIFEST_SKIP]
+        level = below[:200]
+    return False
+
+
+def git_top(folder):
+    """The top of the git repository folder is in (the nearest folder at or above it with a .git), or None."""
+    p = folder
+    while True:
+        if os.path.exists(os.path.join(p, ".git")):
+            return p
+        up = os.path.dirname(p)
+        if up == p:
+            return None
+        p = up
+
+
+def workflow_plan(repo, replace_settings):
+    """What copying the workflow into repo would do to each file: new, replace, same (already identical) or keep
+    (a settings file of the plugin's own, left as it is)."""
+    plan = []
+    for rel in workflow_files():
+        src, dst = os.path.join(WORKFLOW_DIR, rel), os.path.join(repo, rel)
+        setting = rel in WORKFLOW_SETTINGS
+        if not os.path.lexists(dst):
+            action = "new"
+        elif not os.path.isfile(dst):
+            action = "blocked"   # a folder (or something else) is in the way
+        elif filecmp.cmp(src, dst, shallow=False):
+            action = "same"
+        elif setting and not replace_settings:
+            action = "keep"
         else:
-            lines.append("--- finished OK ---" if ok else "--- FAILED ---")
-        job.busy = False
+            action = "replace"
+        plan.append({"file": rel, "action": action, "setting": setting})
+    return plan
+
+
+def workflow_view(raw, replace_settings=False):
+    """What the Copy Plugin Release Workflow page needs to know about a folder."""
+    path = full_path(raw)
+    if path is None:
+        return {"exists": False, "error": "Enter the full path of the plugin's folder (~ is fine)"}
+    if not os.path.isdir(path):
+        return {"exists": False, "path": path, "error": f"'{path}' is not an existing folder"}
+    top = git_top(path)
+    manifests = plugin_manifests(path)
+    problems, warnings = [], []
+    if top and top != path:
+        problems.append(f"This folder is inside the git checkout {top}. GitHub only runs workflows from the top of a "
+                        f"repository, so choose {top} instead.")
+    if not manifests:
+        problems.append("There is no plugin.json in this folder or below it: this is not a DWC plugin.")
+    elif len(manifests) > 1 and "/" in manifests[0]:
+        problems.append("There is more than one plugin.json (" + ", ".join(manifests) + ") and none at the top: the "
+                        "workflow would stop with an error. Remove the extra ones first.")
+    elif len(manifests) > 1:
+        warnings.append(f"More than one plugin.json: the workflow uses {manifests[0]} (the one at the top).")
+    if not top:
+        warnings.append("This folder is not a git checkout yet. The workflow only runs once it is committed and pushed to GitHub.")
+    if not os.path.isdir(WORKFLOW_DIR):
+        problems.append(f"The workflow's files are missing: there is no {WORKFLOW_DIR}")
+    return {"exists": True, "path": path, "name": os.path.basename(path), "git": top == path,
+            "manifests": manifests, "problems": problems, "warnings": warnings,
+            "plan": workflow_plan(path, replace_settings) if os.path.isdir(WORKFLOW_DIR) else []}
+
+
+def copy_workflow(repo, replace_settings):
+    """Copy the workflow's files into repo as workflow_plan says. Returns [(file, what was done)]."""
+    done = []
+    for item in workflow_plan(repo, replace_settings):
+        rel, action = item["file"], item["action"]
+        if action in ("new", "replace"):
+            dst = os.path.join(repo, rel)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(os.path.join(WORKFLOW_DIR, rel), dst)   # keeps release.sh executable
+            done.append((rel, "added" if action == "new" else "replaced"))
+        elif action == "blocked":
+            raise OSError(f"{rel} cannot be copied: something that is not a file is in the way")
+    return done
+
+
+def remember_workflow_target(path):
+    """Make path the last plugin folder used (and the most recent). Returns an error message, or None."""
+    with save_lock:
+        data = load_store()
+        recent = data.get("workflow_recent")
+        recent = [x for x in recent if isinstance(x, str)] if isinstance(recent, list) else []
+        data["workflow_target"] = path
+        data["workflow_recent"] = ([path] + [x for x in recent if x != path])[:RECENT_MAX]
+        return write_store(data)
 
 
 # ---------- Prepare: the job ----------
@@ -1091,115 +858,8 @@ def write_launcher(project, opts, lines):
     lines.append(f"{name}: made, to start {main} with the venv")
 
 
-# ---------- the GitHub release workflow that Prepare adds to each project ----------
-RELEASE_WORKFLOW_PATH = os.path.join(".github", "workflows", "release-zips.yml")
-RELEASE_WORKFLOW = r'''# Made by Prepare in Prep_and_Package, which replaces this file each time it runs: change it there, not here.
-# Attaches the project's zips to a GitHub release when the release is published (or for a tag, by hand).
-name: Attach zips to release
-
-on:
-  release:
-    types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to upload zips to (e.g. v1.2.3)"
-        required: true
-
-permissions:
-  contents: write
-
-jobs:
-  upload:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
-
-      # Zips are taken from standalone-zip/ and plugin-zip/. When both hold zips, each is renamed so the two
-      # cannot clash: standalone-<name> and plugin-<name>. When only one does, its zips keep their names.
-      # When neither does, the zips in dist/ are used (as before), keeping their names.
-      - name: Upload zips to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: |
-          shopt -s nullglob
-          standalone=(standalone-zip/*.zip)
-          plugin=(plugin-zip/*.zip)
-          out="$RUNNER_TEMP/release-zips"
-          mkdir -p "$out"
-
-          if [ ${#standalone[@]} -gt 0 ] && [ ${#plugin[@]} -gt 0 ]; then
-            for f in "${standalone[@]}"; do cp "$f" "$out/standalone-$(basename "$f")"; done
-            for f in "${plugin[@]}"; do cp "$f" "$out/plugin-$(basename "$f")"; done
-          elif [ ${#standalone[@]} -gt 0 ]; then
-            cp "${standalone[@]}" "$out/"
-          elif [ ${#plugin[@]} -gt 0 ]; then
-            cp "${plugin[@]}" "$out/"
-          else
-            dist=(dist/*.zip)
-            if [ ${#dist[@]} -eq 0 ]; then
-              echo "No zip files found in standalone-zip/, plugin-zip/ or dist/"
-              exit 1
-            fi
-            cp "${dist[@]}" "$out/"
-          fi
-
-          for f in "$out"/*.zip; do
-            echo "Uploading $(basename "$f")"
-            gh release upload "$TAG" "$f" --clobber
-          done
-'''
-
-
-def git_top(folder):
-    """The top folder of the git repository holding folder (the nearest one above it with .git), or None."""
-    path = os.path.abspath(folder)
-    while True:
-        if os.path.exists(os.path.join(path, ".git")):   # a folder, or a file in a worktree or submodule
-            return path
-        up = os.path.dirname(path)
-        if up == path:
-            return None
-        path = up
-
-
-def release_workflow_state(project):
-    """"current", "outdated" (another version, or edited) or "" (none) for the project's release workflow."""
-    try:
-        with open(os.path.join(project, RELEASE_WORKFLOW_PATH), encoding="utf-8", newline="") as f:
-            return "current" if f.read() == RELEASE_WORKFLOW else "outdated"
-    except OSError:
-        return ""
-
-
-def write_release_workflow(project, lines):
-    """Add the release workflow to the project, or bring it up to date. GitHub only runs workflows from the
-    top folder of a repository, so say so when the project is not one."""
-    path = os.path.join(project, RELEASE_WORKFLOW_PATH)
-    state = release_workflow_state(project)
-    if state == "current":
-        lines.append(f"{RELEASE_WORKFLOW_PATH}: up to date")
-    else:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="\n") as f:   # LF on every system, as git and GitHub expect
-            f.write(RELEASE_WORKFLOW)
-        lines.append(f"{RELEASE_WORKFLOW_PATH}: " + ("updated" if state else "made") +
-                     ". When a GitHub release is published, it attaches the zips in standalone-zip/ and plugin-zip/ "
-                     "(named standalone-... and plugin-... when both have zips), or else those in dist/")
-    top = git_top(project)
-    if top is None:
-        lines.append("  This folder is not in a git repository yet: the workflow runs once it is pushed to GitHub "
-                     "as the top folder of a repository")
-    elif os.path.normcase(top) != os.path.normcase(os.path.abspath(project)):
-        lines.append(f"  Not used as it is: the project is inside the git repository {top}, and GitHub only runs "
-                     f"workflows from {os.path.join(top, '.github', 'workflows')}")
-
-
 def run_prepare_job(lines, project, opts):
-    """requirements.txt from the imports -> venv -> pip install -> import check -> launcher -> release workflow."""
+    """requirements.txt from the imports -> venv -> pip install -> import check -> launcher."""
     job = prepare_job
     ok = False
     name = os.path.basename(project)
@@ -1287,16 +947,13 @@ def run_prepare_job(lines, project, opts):
                              "asks for) and press Prepare again")
         lines.append("=== Launcher ===")
         write_launcher(project, opts, lines)
-        lines.append("=== GitHub release workflow ===")
-        write_release_workflow(project, lines)
 
         version = program_version(project, opts["main"])
         lines.append("")
-        lines.append("Ready for Make Zip:" if code == 0 else "Make Zip would use:")
+        lines.append("Ready:" if code == 0 else "Prepared, with the problems above:")
         lines.append(f"  main program  {opts['main']}" + (f", version {version}" if version else ", no version set"))
         lines.append(f"  requirements  {req}")
-        lines.append("  README.md     " + ("yes" if os.path.isfile(os.path.join(project, README)) else
-                                         "none (optional: it goes into the zip with the program)"))
+        lines.append(f"  venv          {venv}")
         ok = code == 0
     except Exception as e:
         lines.append(f"Error: {e}")
@@ -1335,13 +992,12 @@ def add_job_routes(prefix, name, job):
     app.add_url_rule(f"{prefix}/api/log", f"{name}_log", log, methods=["GET"])
 
 
-add_job_routes("/makezip", "zip", zip_job)
 add_job_routes("/prepare", "prepare", prepare_job)
 
 
 @app.get("/api/status")
 def api_status():
-    return jsonify(makezip=zip_job.busy, prepare=prepare_job.busy)
+    return jsonify(prepare=prepare_job.busy)
 
 
 @app.post("/api/exit")
@@ -1397,20 +1053,25 @@ def api_bye():
 
 @app.get("/api/browse")
 def api_browse():
-    """Sub-folders of a folder, each marked if it is a project, and the folders above it (crumbs, from the top).
+    """Sub-folders of a folder, each marked if it is a project (with kind=plugin: if it holds a plugin.json),
+    and the folders above it (crumbs, from the top).
     With no path: the folder of the last project used, else the Startup Folder from Settings. With exact
     (for suggestions while a path is typed), a path that is not a folder gives no folders instead."""
     data = load_store()
     raw = request.args.get("path", "")
     path = full_path(raw) if raw else None
+    # kind=plugin: for Copy Plugin Release Workflow, which marks folders holding a plugin.json instead of projects
+    plugins = request.args.get("kind") == "plugin"
+    marks = has_manifest if plugins else is_project
     if request.args.get("exact") and (path is None or not os.path.isdir(path)):
         return jsonify(path="", dirs=[], is_project=False, crumbs=[], sep=os.sep)
     if path is None or not os.path.isdir(path):
-        last = data["project"]
+        last = data.get("workflow_target") if plugins else data["project"]
+        last = last if isinstance(last, str) else ""
         path = os.path.dirname(last) if last and os.path.isdir(last) else projects_dir(data)
         if not os.path.isdir(path):
             path = DEFAULT_PROJECTS
-    dirs = [{"name": d, "path": os.path.join(path, d), "is_project": is_project(os.path.join(path, d))}
+    dirs = [{"name": d, "path": os.path.join(path, d), "is_project": marks(os.path.join(path, d))}
             for d in subdirs(path)]
     crumbs, p = [], path
     while True:
@@ -1419,7 +1080,7 @@ def api_browse():
         if up == p:
             break
         p = up
-    return jsonify(path=path, dirs=dirs, is_project=is_project(path),
+    return jsonify(path=path, dirs=dirs, is_project=marks(path),
                    crumbs=crumbs[::-1], sep=os.sep)
 
 
@@ -1465,20 +1126,6 @@ def api_project_options():
     if err:
         return jsonify(error=f"Could not save the settings file: {err}"), 500
     return jsonify(project_view(path))
-
-
-@app.get("/api/project/installpy")
-def api_install_py():
-    """The install.py that Make Zip puts into this project's zip, to look at."""
-    path = full_path(request.args.get("path", ""))
-    if path is None or not is_project(path):
-        return Response("Not a project folder", 404, mimetype="text/plain")
-    opts = options_for(path)
-    if not opts["main"]:
-        return Response("Choose the main program first", 400, mimetype="text/plain")
-    files = top_level(rel for _, rel in release_files(path, opts, zip_files(path, opts)[1]))
-    req = requirements_file(path, opts) or requirements_places(opts)[0]
-    return Response(make_install_py(os.path.basename(path), opts, req, files), mimetype="text/plain")
 
 
 def config_view():
@@ -1543,39 +1190,34 @@ def api_config_set():
     return jsonify(config_view())
 
 
-# ---------- routes: Make Zip ----------
-@app.post("/makezip/api/start")
-def zip_start():
+# ---------- routes: Copy Plugin Release Workflow ----------
+@app.get("/workflow/api/target")
+def workflow_target():
+    """The last plugin folder used and the recent ones (no path), or what copying into `path` would do."""
+    if request.args.get("path") is None:
+        data = load_store()
+        recent = data.get("workflow_recent") if isinstance(data.get("workflow_recent"), list) else []
+        last = data.get("workflow_target") if isinstance(data.get("workflow_target"), str) else ""
+        return jsonify(target=last, recent=[x for x in recent if isinstance(x, str) and os.path.isdir(x)])
+    return jsonify(workflow_view(request.args["path"], request.args.get("replace_settings") == "1"))
+
+
+@app.post("/workflow/api/copy")
+def workflow_copy():
     d = request.get_json(silent=True) or {}
-    project, opts, err = check_project(d.get("project", ""))
-    if err:
-        return jsonify(error=err), 400
-    exclude = d.get("exclude", [])
-    if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
-        return jsonify(error="Invalid exclusion list"), 400
-    if not set(exclude) <= {rel for _, rel in release_files(project, opts)}:
-        return jsonify(error="An excluded file is not in the project"), 400
-    needed = set(exclude) & needed_files(project, opts)
-    if needed:
-        return jsonify(error=f"{', '.join(sorted(needed))} cannot be left out: install.py needs it"), 400
-    lines = zip_job.begin()
-    if lines is None:
-        return jsonify(error="Already running - stop it first"), 409
-    err = remember_project(project, exclude=sorted(exclude))   # the ticks come back next time
-    if err:
-        lines.append(f"Could not remember these selections: {err}")
-    threading.Thread(target=run_zip_job, args=(lines, project, opts, exclude), daemon=True).start()
-    return jsonify(ok=True)
-
-
-@app.get("/makezip/api/download")
-def zip_download():
-    """Download one of the zips in a project's standalone-zip folder."""
-    project = full_path(request.args.get("project", ""))
-    name = request.args.get("name", "")
-    if project is None or not os.path.isdir(project) or name not in {z["name"] for z in release_zips(project)}:
-        return jsonify(error="No such zip file"), 404
-    return send_from_directory(os.path.join(project, ZIP_DIR), name, as_attachment=True)
+    replace_settings = d.get("replace_settings") is True
+    view = workflow_view(d.get("path", ""), replace_settings)
+    if not view["exists"]:
+        return jsonify(error=view["error"]), 400
+    if view["problems"]:
+        return jsonify(error=view["problems"][0]), 400
+    try:
+        done = copy_workflow(view["path"], replace_settings)
+    except OSError as e:
+        return jsonify(error=f"Could not copy the workflow: {e}"), 500
+    err = remember_workflow_target(view["path"])
+    return jsonify(done=[{"file": f, "what": w} for f, w in done], remember_error=err,
+                   view=workflow_view(view["path"], replace_settings))
 
 
 # ---------- routes: Prepare ----------
@@ -1620,7 +1262,7 @@ def render(title, page):
 
 
 HOME_PAGE = render("Prep and Package", "home")
-ZIP_PAGE = render("Make Zip", "makezip")
+WORKFLOW_PAGE = render("Copy Plugin Release Workflow", "workflow")
 PREPARE_PAGE = render("Prepare", "prepare")
 SETTINGS_PAGE = render("Prep and Package - Settings", "settings")
 _README_TEMPLATE = render("Prep and Package - Instructions", "readme")
@@ -1667,9 +1309,9 @@ def home():
     return HOME_PAGE
 
 
-@app.get("/makezip")
-def makezip_page():
-    return ZIP_PAGE
+@app.get("/workflow")
+def workflow_page():
+    return WORKFLOW_PAGE
 
 
 @app.get("/prepare")

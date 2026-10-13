@@ -1,5 +1,5 @@
 mountPage(() => {
-  const project = ref(""), running = reactive({makezip:false, prepare:false});
+  const project = ref(""), running = reactive({prepare:false});
   (async () => {
     try{
       const j = await getJSON("/api/project");

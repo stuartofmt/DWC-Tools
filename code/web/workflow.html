@@ -1,0 +1,105 @@
+<page-frame title="Copy Plugin Release Workflow">
+  <p class="note mb-4">Copies the GitHub release workflow for DWC plugins into a plugin's folder on this computer:
+  <code>.github/workflows/release.yml</code> (with its notes, <code>release.yml.md</code>) and the <code>scripts</code> it uses.
+  Only files on disk change: nothing is committed or pushed. The workflow reaches GitHub when you commit and push these files yourself;
+  after that, pushing a version tag builds the plugin's ZIP and publishes a release (see <code>release.yml.md</code>).
+  Copy again at any time to update the workflow: the plugin's own settings files are kept.</p>
+
+  <v-combobox v-model="path" :items="recent" label="Plugin folder" placeholder="Full path, or press Browse"
+              autocomplete="off" hide-details @update:model-value="typed" @blur="check(true)" @keydown.enter="check(true)">
+    <template #item="{ item, props: ip }">
+      <v-list-item v-bind="ip" prepend-icon="mdi-history"></v-list-item>
+    </template>
+    <template #append>
+      <v-btn v-if="smAndUp" prepend-icon="mdi-folder-search-outline" @click="openBrowser">Browse…</v-btn>
+      <v-btn v-else icon="mdi-folder-search-outline" title="Browse" @click="openBrowser"></v-btn>
+    </template>
+  </v-combobox>
+  <div class="note">The plugin's folder on this computer, at the top of its git checkout (the folder holding <code>.git</code>), with the plugin's <code>plugin.json</code> in it or below it.</div>
+
+  <template v-if="view">
+    <div v-if="!view.exists" class="note bad">{{ view.error }}</div>
+    <template v-else>
+      <div v-if="view.manifests.length" class="note good">plugin.json: {{ view.manifests.join(", ") }}</div>
+      <div v-for="p in view.problems" :key="p" class="note bad">{{ p }}</div>
+      <div v-for="w in view.warnings" :key="w" class="note">{{ w }}</div>
+
+      <v-checkbox v-model="replaceSettings" hide-details class="mt-2" @update:model-value="check(false)"
+                  label="Replace the plugin's settings files too (release-channel.txt, release-exclude.txt, release-titles.txt)"></v-checkbox>
+
+      <v-table density="compact" class="mt-2 wf-plan">
+        <thead><tr><th>File</th><th>What Copy does</th></tr></thead>
+        <tbody>
+          <tr v-for="f in view.plan" :key="f.file">
+            <td><code>{{ f.file }}</code><span v-if="f.setting" class="note"> (settings)</span></td>
+            <td><v-chip size="small" :color="ACTIONS[f.action].color" variant="tonal">{{ ACTIONS[f.action].text }}</v-chip></td>
+          </tr>
+        </tbody>
+      </v-table>
+
+      <div class="d-flex align-center ga-2 flex-wrap my-4">
+        <v-btn color="primary" prepend-icon="mdi-content-copy" :disabled="!canCopy || copying" :loading="copying" @click="copy">Copy</v-btn>
+        <span class="note">{{ summary }}</span>
+      </div>
+
+      <v-alert v-if="result" type="success" variant="tonal" class="mb-4">
+        <div v-if="result.done.length">Copied into <code>{{ view.path }}</code>:</div>
+        <div v-else>Nothing needed copying: <code>{{ view.path }}</code> already has this workflow.</div>
+        <ul class="ml-6"><li v-for="d in result.done" :key="d.file"><code>{{ d.file }}</code> {{ d.what }}</li></ul>
+        <div class="mt-2">Only these files on disk changed. Next: commit them and push, which is when GitHub gets the workflow. Once per repository on GitHub: allow Actions
+          (Settings → Actions → General) and add an environment named exactly <code>dwc-release-approval</code> with yourself as a
+          required reviewer (Settings → Environments). <code>.github/workflows/release.yml.md</code> explains how to release.</div>
+      </v-alert>
+    </template>
+  </template>
+
+  <v-dialog v-model="dlg.open" max-width="700" :fullscreen="xs" scrollable @after-enter="filterBox && filterBox.focus()">
+    <v-card>
+      <v-card-title class="d-flex align-center">
+        Choose the plugin's folder<v-spacer></v-spacer>
+        <v-btn icon="mdi-close" variant="text" size="small" title="Close" @click="dlg.open = false"></v-btn>
+      </v-card-title>
+      <div class="crumbs px-3">
+        <template v-for="(c, i) in dlg.crumbs" :key="c.path">
+          <v-icon v-if="i" icon="mdi-chevron-right" size="small" class="text-medium-emphasis"></v-icon>
+          <v-btn size="small" variant="text" :class="{'font-weight-bold': i === dlg.crumbs.length - 1}"
+                 @click="i < dlg.crumbs.length - 1 && browse(c.path)">{{ c.name }}</v-btn>
+        </template>
+      </div>
+      <div class="d-flex align-center ga-4 px-4 pt-2 flex-wrap">
+        <v-text-field ref="filterBox" v-model="dlg.filter" prepend-inner-icon="mdi-magnify" placeholder="Filter folders…"
+                      density="compact" variant="outlined" hide-details clearable class="filter"></v-text-field>
+      </div>
+      <div class="note px-4">Folders with a plugin.json in them (or up to 3 levels below) have a <b>plugin</b> tag.</div>
+      <v-progress-linear :active="dlg.loading" indeterminate class="mt-2"></v-progress-linear>
+      <v-divider></v-divider>
+      <v-card-text class="pa-0 dlg-list">
+        <v-list density="compact" class="dirs" color="primary">
+          <v-list-item v-if="!shown.length" :subtitle="dlg.dirs.length ? '(no folders match)' : '(no sub-folders)'"></v-list-item>
+          <v-list-item v-for="d in shown" :key="d.path" :class="{project: d.is_project}"
+                       :prepend-icon="d.is_project ? 'mdi-folder-star' : 'mdi-folder'" @click="browse(d.path)">
+            <v-list-item-title>{{ d.name }}</v-list-item-title>
+            <template #append>
+              <template v-if="d.is_project">
+                <v-chip size="x-small" color="primary" class="mr-2">plugin</v-chip>
+                <v-btn size="small" color="primary" class="mr-1" @click.stop="choose(d.path)">Select</v-btn>
+              </template>
+              <v-icon icon="mdi-chevron-right" class="text-medium-emphasis"></v-icon>
+            </template>
+          </v-list-item>
+        </v-list>
+      </v-card-text>
+      <v-divider></v-divider>
+      <div v-if="recent.length" class="d-flex align-center ga-2 flex-wrap px-4 pt-3">
+        <span class="text-body-2 text-medium-emphasis">Recent:</span>
+        <v-chip v-for="p in recent" :key="p" size="small" prepend-icon="mdi-history" :title="p" @click="choose(p)">{{ baseName(p) }}</v-chip>
+      </div>
+      <v-card-actions class="px-4">
+        <span v-if="!dlg.isProject" class="text-body-2 text-medium-emphasis">No plugin.json in or below this folder</span>
+        <v-spacer></v-spacer>
+        <v-btn @click="dlg.open = false">Cancel</v-btn>
+        <v-btn color="primary" variant="flat" @click="choose(dlg.cwd)">Use this folder</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+</page-frame>

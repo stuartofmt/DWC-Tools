@@ -34,7 +34,7 @@ addEventListener("pageshow", e => { if(e.persisted) alive(); });   // back again
 const LINKS = [
   {href:"/", text:"Home", icon:"mdi-home"},
   {href:"/prepare", text:"Prepare", icon:"mdi-package-variant-closed"},
-  {href:"/makezip", text:"Make Zip", icon:"mdi-folder-zip"},
+  {href:"/workflow", text:"Release Workflow", icon:"mdi-source-branch-sync"},
   {href:"/readme", text:"Instructions", icon:"mdi-book-open-variant"},
   {href:"/settings", text:"Settings", icon:"mdi-cog"},
 ];
@@ -149,7 +149,6 @@ const ProjectPicker = {
     const isProject = computed(() => !!(view.value && view.value.exists && view.value.is_project));
     const versionText = computed(() => !options.main || !view.value ? "" :
                                        view.value.version ? "version " + view.value.version : "no version set");
-    const installPy = computed(() => view.value ? "/api/project/installpy?path=" + encodeURIComponent(view.value.path) : "");
 
     function show(j){
       let info = null;
@@ -307,7 +306,7 @@ const ProjectPicker = {
       path.value = remembered = j.project || "";
       check(current(), false);
     });
-    return {path, recent, view, optsOpen, menu, note, optNote, options, isProject, versionText, installPy, smAndUp, xs,
+    return {path, recent, view, optsOpen, menu, note, optNote, options, isProject, versionText, smAndUp, xs,
             items, typed, commit, complete, saveOptions, choose, baseName,
             dlg, shown, filterBox, dirList, browse, openBrowser, onKey,
             refresh: () => check(current(), false)};
@@ -391,9 +390,8 @@ const ProjectPicker = {
           <v-checkbox v-model="options.site" hide-details @update:model-value="saveOptions"
                       label="The venv can also use Python packages already installed on the system (--system-site-packages)"></v-checkbox>
           <div :class="['note', optNote.kind]">{{ optNote.text }}</div>
-          <div class="note">Saved as soon as you change them, and used by both tools. Packages are installed into the venv with pip, from the project's requirements.txt.
-            A change to the system packages option takes effect at the next Prepare, which then makes a new venv.
-            <a v-if="options.main" :href="installPy" target="_blank">See the install.py these make</a><span v-if="options.main"> (it goes into the zip).</span></div>
+          <div class="note">Saved as soon as you change them. Packages are installed into the venv with pip, from the project's requirements.txt.
+            A change to the system packages option takes effect at the next Prepare, which then makes a new venv.</div>
         </v-expansion-panel-text>
       </v-expansion-panel>
     </v-expansion-panels>
