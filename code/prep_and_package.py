@@ -15,7 +15,7 @@ The project's name is its folder name.
 
 Prepare works on the project folder itself: it adds any missing packages the code folder imports to requirements.txt
 (making <code folder>/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
-checks that the venv can import every package, and adds a run.sh / run.bat launcher if there is none.
+checks that the venv can import every package, and adds run.sh and run.bat launchers (both, for Linux and Windows) where they are missing.
 
 Copy Plugin Release Workflow copies the files in the "plugin release workflow" folder next to this script
 (.github/workflows/release.yml and its notes, and scripts/) into the top of a plugin's git checkout on disk; it never
@@ -841,52 +841,53 @@ def venv_uses_system(venv):
 
 
 def write_launcher(project, opts, req, lines):
-    """Add run.sh (Windows: run.bat) to the project, to start the program with its venv, unless there is one. With no
-    venv - e.g. the project just unzipped from a release, which never holds one - the launcher makes it first and
-    installs req (requirements.txt, relative to the project) into it. On Linux the venv can see the system's packages
-    (--system-site-packages); on Windows it cannot, as Prepare makes it."""
-    name = launcher_name()
-    path = os.path.join(project, name)
-    if os.path.exists(path):
-        lines.append(f"{name}: already there, left as it is")
-        return
+    """Add run.sh and run.bat to the project, to start the program with its venv, unless they are there already. Both
+    are made whichever computer Prepare runs on, so a release of the project (zipped from its repository) can be
+    started on Linux and on Windows. With no venv - e.g. the project just unzipped from a release, which never holds
+    one - the launcher makes it first and installs req (requirements.txt, relative to the project) into it. On Linux
+    the venv can see the system's packages (--system-site-packages); on Windows it cannot, as Prepare makes it."""
     main = opts["main"]
-    if IS_WINDOWS:
-        main, req = main.replace("/", "\\"), req.replace("/", "\\")
-        text = ("@echo off\r\n"
-                "rem Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\r\n"
-                f"rem unzipped from a release - it is made first and {req} is installed into it.\r\n"
-                'cd /d "%~dp0"\r\n'
-                "if not exist venv\\Scripts\\python.exe (\r\n"
-                f"  echo First run: making the venv and installing {req} into it\r\n"
-                "  py -3 -m venv venv 2>nul || python -m venv venv || goto failed\r\n"
-                f"  venv\\Scripts\\python.exe -m pip install -r {req} || goto failed\r\n"
-                ")\r\n"
-                f"venv\\Scripts\\python.exe -u {main} %*\r\n"
-                "exit /b\r\n"
-                ":failed\r\n"
-                "echo Could not make the venv: install Python 3 from python.org and run this again\r\n"
-                "rmdir /s /q venv 2>nul\r\n"
-                "exit /b 1\r\n")
-    else:
-        text = ("#!/bin/bash\n"
-                "# Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\n"
-                f"# unzipped from a release - it is made first, able to see the system's packages, and {req}\n"
-                "# is installed into it.\n"
-                'cd "$(dirname "$0")" || exit 1\n'
-                "if [ ! -x venv/bin/python ]; then\n"
-                f'\techo "First run: making the venv and installing {req} into it"\n'
-                f"\tpython3 -m venv --system-site-packages venv && venv/bin/python -m pip install -r {req} || {{\n"
-                '\t\techo "Could not make the venv. On Debian or Raspberry Pi OS the venv module needs: sudo apt install python3-venv"\n'
-                "\t\trm -rf venv   # a half-made venv would be taken as ready next time\n"
-                "\t\texit 1\n"
-                "\t}\n"
-                "fi\n"
-                f'exec venv/bin/python -u {main} "$@"\n')
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        f.write(text)
-    os.chmod(path, 0o755)
-    lines.append(f"{name}: made, to start {main} with the venv")
+    win_main, win_req = main.replace("/", "\\"), req.replace("/", "\\")
+    launchers = {
+        "run.sh": ("#!/bin/bash\n"
+                   "# Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\n"
+                   f"# unzipped from a release - it is made first, able to see the system's packages, and {req}\n"
+                   "# is installed into it.\n"
+                   'cd "$(dirname "$0")" || exit 1\n'
+                   "if [ ! -x venv/bin/python ]; then\n"
+                   f'\techo "First run: making the venv and installing {req} into it"\n'
+                   f"\tpython3 -m venv --system-site-packages venv && venv/bin/python -m pip install -r {req} || {{\n"
+                   '\t\techo "Could not make the venv. On Debian or Raspberry Pi OS the venv module needs: sudo apt install python3-venv"\n'
+                   "\t\trm -rf venv   # a half-made venv would be taken as ready next time\n"
+                   "\t\texit 1\n"
+                   "\t}\n"
+                   "fi\n"
+                   f'exec venv/bin/python -u {main} "$@"\n'),
+        "run.bat": ("@echo off\r\n"
+                    "rem Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\r\n"
+                    f"rem unzipped from a release - it is made first and {win_req} is installed into it.\r\n"
+                    'cd /d "%~dp0"\r\n'
+                    "if not exist venv\\Scripts\\python.exe (\r\n"
+                    f"  echo First run: making the venv and installing {win_req} into it\r\n"
+                    "  py -3 -m venv venv 2>nul || python -m venv venv || goto failed\r\n"
+                    f"  venv\\Scripts\\python.exe -m pip install -r {win_req} || goto failed\r\n"
+                    ")\r\n"
+                    f"venv\\Scripts\\python.exe -u {win_main} %*\r\n"
+                    "exit /b\r\n"
+                    ":failed\r\n"
+                    "echo Could not make the venv: install Python 3 from python.org and run this again\r\n"
+                    "rmdir /s /q venv 2>nul\r\n"
+                    "exit /b 1\r\n"),
+    }
+    for name, text in launchers.items():
+        path = os.path.join(project, name)
+        if os.path.exists(path):
+            lines.append(f"{name}: already there, left as it is")
+            continue
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        os.chmod(path, 0o755)
+        lines.append(f"{name}: made, to start {main} with the venv")
 
 
 def run_prepare_job(lines, project, opts):

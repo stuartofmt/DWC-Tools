@@ -35,7 +35,7 @@ makes the rest.</p>
         requirements.txt   what pip installs into the venv: made by Prepare (it can also be in the project folder)
         ...
     venv/                  made by Prepare
-    run.sh                 made by Prepare if there is none (Windows: run.bat): starts the program with the venv</pre>
+    run.sh, run.bat        made by Prepare if missing: start the program with the venv (making it first if there is none)</pre>
 
 <h3>Choosing the project</h3>
 <ul>
@@ -73,8 +73,9 @@ makes the rest.</p>
   <li><b>Install.</b> <code>requirements.txt</code> is installed into the venv with the venv's own pip.</li>
   <li><b>Check.</b> The venv imports each package the program needs. A failure means something is missing from <code>requirements.txt</code>,
       or the package needs something from the operating system: the log shows the error.</li>
-  <li><b>Launcher.</b> <code>run.sh</code> (Windows: <code>run.bat</code>) is added to the project folder, unless there is one already, so the program can
-      be run from there with its venv.</li>
+  <li><b>Launchers.</b> <code>run.sh</code> (Linux) and <code>run.bat</code> (Windows) are both added to the project folder, each unless it is there
+      already, so the program can be run from there with its venv on either system. With no venv, as in a release just unzipped, they make
+      it first and install <code>requirements.txt</code> into it (on Linux, able to see the system's packages).</li>
 </ol>
 <p>The log ends with the main program, its version, the <code>requirements.txt</code> used and the venv. Run Prepare again whenever the program's imports change.</p>
 <p>Creating a venv needs Python's venv module. Debian and Raspberry Pi OS ship it separately as <code>python3-venv</code>: if the log says the venv
