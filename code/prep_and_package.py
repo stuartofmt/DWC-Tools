@@ -840,8 +840,11 @@ def venv_uses_system(venv):
     return None
 
 
-def write_launcher(project, opts, lines):
-    """Add run.sh (Windows: run.bat) to the project, to start the program with its venv, unless there is one."""
+def write_launcher(project, opts, req, lines):
+    """Add run.sh (Windows: run.bat) to the project, to start the program with its venv, unless there is one. With no
+    venv - e.g. the project just unzipped from a release, which never holds one - the launcher makes it first and
+    installs req (requirements.txt, relative to the project) into it. On Linux the venv can see the system's packages
+    (--system-site-packages); on Windows it cannot, as Prepare makes it."""
     name = launcher_name()
     path = os.path.join(project, name)
     if os.path.exists(path):
@@ -849,11 +852,37 @@ def write_launcher(project, opts, lines):
         return
     main = opts["main"]
     if IS_WINDOWS:
-        text = ("@echo off\r\nrem Start the program with its venv (made by Prepare in Prep_and_Package).\r\n"
-                f'cd /d "%~dp0"\r\nvenv\\Scripts\\python.exe -u {main.replace("/", os.sep)} %*\r\n')
+        main, req = main.replace("/", "\\"), req.replace("/", "\\")
+        text = ("@echo off\r\n"
+                "rem Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\r\n"
+                f"rem unzipped from a release - it is made first and {req} is installed into it.\r\n"
+                'cd /d "%~dp0"\r\n'
+                "if not exist venv\\Scripts\\python.exe (\r\n"
+                f"  echo First run: making the venv and installing {req} into it\r\n"
+                "  py -3 -m venv venv 2>nul || python -m venv venv || goto failed\r\n"
+                f"  venv\\Scripts\\python.exe -m pip install -r {req} || goto failed\r\n"
+                ")\r\n"
+                f"venv\\Scripts\\python.exe -u {main} %*\r\n"
+                "exit /b\r\n"
+                ":failed\r\n"
+                "echo Could not make the venv: install Python 3 from python.org and run this again\r\n"
+                "rmdir /s /q venv 2>nul\r\n"
+                "exit /b 1\r\n")
     else:
-        text = ("#!/bin/bash\n# Start the program with its venv (made by Prepare in Prep_and_Package).\n"
-                f'cd "$(dirname "$0")"\nexec venv/bin/python -u {main} "$@"\n')
+        text = ("#!/bin/bash\n"
+                "# Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\n"
+                f"# unzipped from a release - it is made first, able to see the system's packages, and {req}\n"
+                "# is installed into it.\n"
+                'cd "$(dirname "$0")" || exit 1\n'
+                "if [ ! -x venv/bin/python ]; then\n"
+                f'\techo "First run: making the venv and installing {req} into it"\n'
+                f"\tpython3 -m venv --system-site-packages venv && venv/bin/python -m pip install -r {req} || {{\n"
+                '\t\techo "Could not make the venv. On Debian or Raspberry Pi OS the venv module needs: sudo apt install python3-venv"\n'
+                "\t\trm -rf venv   # a half-made venv would be taken as ready next time\n"
+                "\t\texit 1\n"
+                "\t}\n"
+                "fi\n"
+                f'exec venv/bin/python -u {main} "$@"\n')
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(text)
     os.chmod(path, 0o755)
@@ -948,7 +977,7 @@ def run_prepare_job(lines, project, opts):
                 lines.append("Some packages could not be imported: fix requirements.txt (or install what the error "
                              "asks for) and press Prepare again")
         lines.append("=== Launcher ===")
-        write_launcher(project, opts, lines)
+        write_launcher(project, opts, req.replace(os.sep, "/"), lines)
 
         version = program_version(project, opts["main"])
         lines.append("")
