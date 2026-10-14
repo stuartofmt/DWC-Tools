@@ -12,22 +12,21 @@
  *                                             working copy is not emptied by mistake.
  *   --dir <folder>                            work on this folder instead of the Code folder (e.g. a copy of it)
  *
- * A repository with no plugin.json is released as a standalone ZIP of the whole repository, so the
- * repository root is pruned instead, and the release workflow's own files (.github/, the scripts it adds)
- * and standalone-zip/ are always left out too.
+ * A repository with no plugin.json has no plugin ZIP (only a standalone ZIP, made by ./release-standalone.mjs),
+ * so there is nothing to do.
+ *
+ * The standalone/ folder (see ./release-standalone.mjs) is never part of the plugin ZIP: when plugin.json is
+ * at the repository root, so the Code folder is the whole repository, it is always left out too.
  *
  * Pattern rules (a subset of .gitignore) are described in scripts/release-exclude.txt.
  */
-import { existsSync, lstatSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { isStandalone, manifestPath, repoRoot } from "./manifest.mjs";
+import { isStandalone, manifestPath, repoRoot, STANDALONE_DIR } from "./manifest.mjs";
+import { compile, findMatches, readPatterns, removeMatches } from "./release-patterns.mjs";
 
 const EXCLUDE_FILE = join(repoRoot, "scripts", "release-exclude.txt");
-const standalone = isStandalone();
-const ALWAYS = ["__pycache__/", "venv/", ".git/", "*.pyc", "*.log",
-	// A standalone ZIP is the whole repository: leave out the release workflow itself and prebuilt ZIPs
-	...(standalone ? [".github/", "standalone-zip/", "scripts/manifest.mjs", "scripts/prune-release.mjs",
-		"scripts/release-*.mjs", "scripts/release-*.txt", "scripts/release.sh"] : [])];
+const ALWAYS = ["__pycache__/", "venv/", ".git/", "*.pyc", "*.log"];
 
 const argv = process.argv.slice(2);
 const args = new Set(argv);
@@ -42,63 +41,32 @@ if (remove && process.env.GITHUB_ACTIONS !== "true" && !args.has("--force")) {
 	process.exit(2);
 }
 
-/** A pattern as a regular expression matched against paths relative to the Code folder. */
-function compile(pattern) {
-	let p = pattern.replace(/^\/+/, "");
-	const dirOnly = p.endsWith("/");
-	p = p.replace(/\/+$/, "");
-	const anywhere = !p.includes("/");   // no "/" inside: the name matches at any depth
-	let re = "";
-	for (let i = 0; i < p.length; i++) {
-		const c = p[i];
-		if (p.startsWith("**/", i)) { re += "(?:[^/]+/)*"; i += 2; }
-		else if (p.startsWith("**", i)) { re += ".*"; i += 1; }
-		else if (c === "*") re += "[^/]*";
-		else if (c === "?") re += "[^/]";
-		else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-	}
-	return { pattern, dirOnly, regex: new RegExp(anywhere ? `(^|/)${re}$` : `^${re}$`), matched: 0 };
+if (isStandalone()) {
+	console.log("No plugin.json - there is no plugin ZIP. The standalone ZIP leaves files out by itself: "
+		+ "node scripts/release-standalone.mjs --list");
+	process.exit(0);
 }
 
-function readPatterns() {
-	if (!existsSync(EXCLUDE_FILE)) return [];
-	return readFileSync(EXCLUDE_FILE, "utf8").split(/\r?\n/)
-		.map((line) => line.trim())
-		.filter((line) => line && !line.startsWith("#"));
-}
-
-const own = readPatterns().map(compile);
+const own = readPatterns(EXCLUDE_FILE).map(compile);
 const rules = [...ALWAYS.map(compile), ...own];
-const codeDir = dirIndex >= 0 ? resolve(argv[dirIndex + 1])
-	: standalone ? repoRoot : dirname(join(repoRoot, manifestPath()));
-if (!standalone && !existsSync(join(codeDir, "plugin.json"))) {
+// plugin.json at the repository root: the Code folder is the whole repository, so the standalone/ folder
+// at its top would otherwise be in the plugin ZIP
+if (dirname(manifestPath()) === ".") {
+	rules.unshift({ pattern: `${STANDALONE_DIR}/`, dirOnly: true, regex: new RegExp(`^${STANDALONE_DIR}$`), matched: 0 });
+}
+const codeDir = dirIndex >= 0 ? resolve(argv[dirIndex + 1]) : dirname(join(repoRoot, manifestPath()));
+if (!existsSync(join(codeDir, "plugin.json"))) {
 	console.error(`${codeDir} has no plugin.json - is it the plugin's Code folder?`);
 	process.exit(2);
 }
-const found = [];
-
-// Walk the Code folder; a matching folder is taken whole and not looked inside
-(function walk(dir) {
-	for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-		const full = join(dir, entry.name);
-		const rel = relative(codeDir, full).split("\\").join("/");
-		const isDir = entry.isDirectory() && !lstatSync(full).isSymbolicLink();
-		const rule = rules.find((r) => (!r.dirOnly || isDir) && r.regex.test(rel));
-		if (rule) {
-			rule.matched++;
-			found.push({ full, rel: isDir ? `${rel}/` : rel });
-		} else if (isDir) {
-			walk(full);
-		}
-	}
-})(codeDir);
+const found = findMatches(codeDir, rules);
 
 const where = dirIndex >= 0 ? codeDir : relative(repoRoot, codeDir) || ".";
-console.log(`${standalone ? "Standalone (no plugin.json), zipping" : "Code folder:"} ${where}  (exclude list: ${existsSync(EXCLUDE_FILE) ? relative(repoRoot, EXCLUDE_FILE) : "none"})`);
-for (const { full, rel } of found) {
+console.log(`Code folder: ${where}  (exclude list: ${existsSync(EXCLUDE_FILE) ? relative(repoRoot, EXCLUDE_FILE) : "none"})`);
+for (const { rel } of found) {
 	console.log(`${remove ? "removed" : "would remove"}: ${rel}`);
-	if (remove) rmSync(full, { recursive: true, force: true });
 }
+if (remove) removeMatches(found);
 if (!found.length) console.log("Nothing to leave out.");
 // A pattern that matched nothing is probably a typo (or a file that has since been removed)
 for (const rule of own.filter((r) => !r.matched)) {

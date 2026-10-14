@@ -4,6 +4,12 @@
   <code>requirements.txt</code> (making <code>code/requirements.txt</code> if there is none), creates the project's <code>venv</code>,
   installs <code>requirements.txt</code> into it, checks that each package can be imported, and adds the launchers
   <code>run.sh</code> and <code>run.bat</code> (both, so a release runs on Linux and Windows) where they are missing. Run it again after changing the imports.</p>
+  <p class="note">With <b>Create standalone</b> ticked (in the project options), the launchers go into a <code>standalone/</code> folder at the
+  top of the git repository instead, with <code>source.txt</code> (this project folder, whose files are at the top of the ZIP) and
+  <code>exclude.txt</code> (what to leave out - for a DWC plugin, <code>plugin.json</code> and <code>sd/</code>). Commit the folder: the
+  release workflow then also releases a standalone ZIP that runs without DWC - for a program with no <code>plugin.json</code>, that ZIP is
+  its release. Prepare makes its own launchers again each time, so a new main program reaches them; remove the
+  <code>(made by Prepare in Prep_and_Package)</code> comment from one to keep your own changes to it.</p>
   <p class="note">{{ state }}</p>
   <job-panel api="/prepare/api" label="Prepare" icon="mdi-package-variant-closed" :can-start="!!info"
              @start="start" @finished="$refs.picker.refresh()"></job-panel>

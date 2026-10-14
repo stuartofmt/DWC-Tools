@@ -6,7 +6,9 @@ These notes repeat the comments at the top of [`release.yml`](release.yml). If y
 
 It builds the installable plugin ZIP file on GitHub's servers, compiling the plugin against the DuetWebControl (DWC) source code. You do not need to build anything on your own computer.
 
-A plugin whose `plugin.json` has no `dwcVersion` has no DWC interface to compile, so it is simply zipped instead (as plugin_tools does) - see [Plugins without a DWC interface](#plugins-without-a-dwc-interface). A repository with no `plugin.json` at all is not a plugin: the whole repository is zipped as a standalone ZIP, with no build and no DWC dependency - see [Repositories without a plugin.json (standalone)](#repositories-without-a-pluginjson-standalone). Either way, files listed in `scripts/release-exclude.txt` are left out of the ZIP - see [Leaving files out of the ZIP](#leaving-files-out-of-the-zip).
+A plugin whose `plugin.json` has no `dwcVersion` has no DWC interface to compile, so it is simply zipped instead (as plugin_tools does) - see [Plugins without a DWC interface](#plugins-without-a-dwc-interface). Files listed in `scripts/release-exclude.txt` are left out of the ZIP - see [Leaving files out of the ZIP](#leaving-files-out-of-the-zip).
+
+A `standalone/` folder at the top of the repository (made by Prep_and_Package's Prepare with **Create standalone** ticked) **also** releases a standalone ZIP that runs without DWC - see [The standalone ZIP](#the-standalone-zip-standalone-folder). A repository with no `plugin.json` is not a plugin: only its standalone ZIP is released, so it needs a `standalone/` folder - with neither, the run stops with an error. See [Repositories without a plugin.json](#repositories-without-a-pluginjson-standalone).
 
 The workflow can be started in two different ways, and they produce different results:
 
@@ -65,7 +67,7 @@ After approval the workflow builds the ZIP and publishes the GitHub Release auto
 
 - **Title:** taken from `scripts/release-titles.txt`, using the version's position among the `v*` tags with this branch's `-dwc<dwcVersion>` suffix (just the tag name if there is no titles file).
 - **Notes:** a list of changes generated from the commit messages since the previous tag (Conventional Commit messages such as `feat: …` and `fix: …` are grouped by type), plus install instructions.
-- **Files:** the plugin ZIP, named `<id>-<version>-<dwcVersion>.zip` using `plugin.json`'s `dwcVersion` (e.g. `MyPlugin-1.2.3-3.7.zip`; for DWC 3.7 and later also a small `-srcmap.zip` of source maps), or `<id>-<version>.zip` for a plugin with no `dwcVersion`, plus any ZIP files in the `standalone-zip/` folder (renamed with a `standalone-` prefix).
+- **Files:** the plugin ZIP, named `<id>-<version>-<dwcVersion>.zip` using `plugin.json`'s `dwcVersion` (e.g. `MyPlugin-1.2.3-3.7.zip`; for DWC 3.7 and later also a small `-srcmap.zip` of source maps), or `<id>-<version>.zip` for a plugin with no `dwcVersion`, plus `standalone-<id>-<version>.zip` if the repository has a `standalone/` folder.
 
 No further action is needed. The Release is public as soon as the run finishes.
 
@@ -118,15 +120,41 @@ If `plugin.json` has no `dwcVersion` (or it is empty or `null`), the plugin has 
 
 ## Repositories without a plugin.json (standalone)
 
-If there is no `plugin.json` anywhere in the repository, it is not a DWC plugin - e.g. a standalone program. The workflow then does not download or build DWC: it zips the whole repository (without the files left out, below), with its files at the top of the ZIP.
+If there is no `plugin.json` anywhere in the repository, it is not a DWC plugin - e.g. a standalone program. It is released only as its standalone ZIP (see [The standalone ZIP](#the-standalone-zip-standalone-folder)), so it needs a `standalone/` folder - without one the run stops with an error. Nothing is built against DWC.
 
 - **Version:** taken from the tag, as there is no `plugin.json` to hold it. The tag is `v<version>`, e.g. `v1.2.3` (pre-releases such as `v1.2.3-rc.1` are fine); a tag that is not `v` and a version number stops the run.
 - **ZIP:** `<repository name>-<version>.zip`, e.g. `MyTool-1.2.3.zip`. A manual run names it `<repository name>-<branch>-<commit>.zip`.
-- **Always left out:** besides the usual list below, `.github/`, `standalone-zip/` and the workflow's own scripts (`scripts/manifest.mjs`, `scripts/prune-release.mjs`, `scripts/release-*.mjs`, `scripts/release-*.txt`, `scripts/release.sh`). Folders left empty are dropped.
 - **Release title:** has the branch being released in brackets, e.g. `v1.2.3 (main) — "Sharpened Edge"`.
-- **Release notes:** say it is a standalone release that does not depend on any DWC version.
+- **Release notes:** say it is a standalone release that does not depend on any DWC version, and how to start it.
 
-`./scripts/release.sh` asks for the version to release (it shows the latest `v*` tag) and creates and pushes `v<version>`.
+`./scripts/release.sh` asks for the version to release (it shows the latest `v*` tag) and creates and pushes `v<version>`. It stops if there is no `standalone/` folder.
+
+## The standalone ZIP (standalone/ folder)
+
+A `standalone/` folder at the top of the repository releases the program packaged to run on its own, without DWC. Prep_and_Package's **Prepare** makes the folder when **Create standalone** is ticked: the `run.sh` / `run.bat` launchers, `source.txt` and `exclude.txt`. `scripts/release-standalone.mjs` builds the ZIP into `standalone/`, and it is attached to the Release (and to a manual run's artifact):
+
+- **For a plugin:** `standalone-<id>-<version>.zip`, next to the plugin ZIP - `plugin.json`'s version and the plugin's tag, so one tag releases both.
+- **With no plugin.json:** `<repository name>-<version>.zip`, the only ZIP (see above).
+
+The standalone ZIP is made from:
+
+1. the **source folder** - the first line of `standalone/source.txt` (the project folder Prepare worked on, relative to the repository root), else the folder holding `plugin.json`, else the repository root - without `__pycache__/`, `venv/`, `.git/`, `*.pyc`, `*.log`, `node_modules/` and what `scripts/release-exclude.txt` lists. From the repository root, `.github/`, the workflow's own scripts and `standalone/` are left out too;
+2. without what `standalone/exclude.txt` lists as well - same pattern rules, relative to the source folder - e.g. a plugin's `plugin.json` and `sd/` files;
+3. plus everything in `standalone/` (e.g. `run.sh`, `run.bat`), added at the top of the ZIP and replacing a file of the same name - except `source.txt`, `exclude.txt`, `.gitignore` and ZIP files.
+
+Folders left empty are dropped.
+
+- **Never committed:** the ZIP is built in the workflow's own checkout. Locally it is written to `standalone/`, so add `standalone/*.zip` to `.gitignore`.
+- **Release notes:** say how to start it, with the launchers in `standalone/`.
+- **Not in the plugin ZIP:** the `standalone/` folder is always left out of the plugin ZIP, even when `plugin.json` is at the repository root.
+- **One branch only:** commit `standalone/` only on the branch it should be released from. Merging that branch into another brings the folder along - remove it there with `git rm -r standalone`.
+
+To try it locally, from the repository folder:
+
+```bash
+node scripts/release-standalone.mjs --list   # what would go in the ZIP - changes nothing
+node scripts/release-standalone.mjs          # build the ZIP into standalone/
+```
 
 ## Leaving files out of the ZIP
 
@@ -150,9 +178,9 @@ The scripts take the plugin's name, ZIP name and links from `plugin.json`, so th
 
 ## Order the jobs run in
 
-1. **resolve-dwc**: read `plugin.json`, check the tag matches its version and dwcVersion, see if a Release already exists, and choose the DWC version (none for a plugin with no `dwcVersion`, which is zipped instead of built, or with no `plugin.json`, where the repository is zipped as a standalone ZIP).
+1. **resolve-dwc**: read `plugin.json`, check the tag matches its version and dwcVersion, see if a Release already exists, and choose the DWC version (none for a plugin with no `dwcVersion`, which is zipped instead of built, or with no `plugin.json`, where only the standalone ZIP is released).
 2. **approval**: pause until someone approves at the `dwc-release-approval` environment.
-3. **build**: copy the folder holding `plugin.json` and leave out the excluded files, then download DWC and build the ZIP from the copy with DWC's `scripts/build-plugin.js` (DWC 3.7 and later write the ZIP next to `plugin.json`; earlier versions write it to DWC's `dist/` folder) - or, with no `dwcVersion` or no `plugin.json`, zip the copy.
+3. **build**: copy the folder holding `plugin.json` and leave out the excluded files, then download DWC and build the ZIP from the copy with DWC's `scripts/build-plugin.js` (DWC 3.7 and later write the ZIP next to `plugin.json`; earlier versions write it to DWC's `dist/` folder) - or, with no `dwcVersion`, zip the copy. With a `standalone/` folder, build the standalone ZIP.
 4. **output**: automatic: publish the GitHub Release. Manual: provide the ZIP as an artifact.
 
 ## One-time setup for a repository

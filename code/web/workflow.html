@@ -15,7 +15,7 @@
       <v-btn v-else icon="mdi-folder-search-outline" title="Browse" @click="openBrowser"></v-btn>
     </template>
   </v-combobox>
-  <div class="note">The plugin's folder on this computer, at the top of its git checkout (the folder holding <code>.git</code>), with the plugin's <code>plugin.json</code> in it or below it. With no <code>plugin.json</code>, the workflow releases a standalone ZIP of the repository instead.</div>
+  <div class="note">The plugin's folder on this computer, at the top of its git checkout (the folder holding <code>.git</code>), with the plugin's <code>plugin.json</code> in it or below it. A <code>standalone/</code> folder at the top (made by Prepare with <b>Create standalone</b> ticked) releases a standalone ZIP as well. With no <code>plugin.json</code>, only that standalone ZIP is released, so it needs the folder.</div>
 
   <template v-if="view">
     <div v-if="!view.exists" class="note bad">{{ view.error }}</div>

@@ -3,7 +3,9 @@ mountPage(() => {
   const state = computed(() => !info.value ? "" :
     "Now: " + [info.value.requirements ? info.value.requirements : "no requirements.txt yet",
                info.value.venv ? "venv made" : "no venv yet",
-               info.value.launcher ? info.value.launcher : "no launcher"].join(", "));
+               info.value.options && info.value.options.standalone
+                 ? (info.value.standalone_dir ? "standalone/ made" : "no standalone/ yet")
+                 : (info.value.launcher ? info.value.launcher : "no launcher")].join(", "));
   // the job panel shows the new state once the run ends (@finished)
   return {info, state, start: () => post(`${API}/start`, {project: info.value.path})};
 });

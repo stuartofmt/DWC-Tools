@@ -16,6 +16,8 @@ The project's name is its folder name.
 Prepare works on the project folder itself: it adds any missing packages the code folder imports to requirements.txt
 (making <code folder>/requirements.txt if there is none), creates <project>/venv, installs requirements.txt into it,
 checks that the venv can import every package, and adds run.sh and run.bat launchers (both, for Linux and Windows) where they are missing.
+With the project option "Create standalone" ticked, it instead makes <repository>/standalone/ for the release workflow's
+standalone ZIP (see make_standalone): the launchers, source.txt (the project folder) and exclude.txt.
 
 Copy Plugin Release Workflow copies the files in the "plugin release workflow" folder next to this script
 (.github/workflows/release.yml and its notes, and scripts/) into the top of a plugin's git checkout on disk; it never
@@ -39,7 +41,8 @@ Open:    the address printed at start-up: this computer's network address (or 12
 
 The app stops by itself (stopping any running job) once every page of it has been closed: each open page sends
 /api/alive every few seconds (saying whether it is hidden) and /api/bye when it closes (see the "open pages" section).
-A hidden page never times out, so minimizing the browser or leaving the page alone does not stop the app.
+A hidden page only times out after PAGE_HIDDEN_TIMEOUT, so minimizing the browser or leaving the page alone does not
+stop the app, but a browser that was killed (or quit without closing its pages) while the page was hidden still does.
 
 The settings, the recent projects and each project's options are stored together in
 .prep_and_package.json, in the same folder as this script.
@@ -86,6 +89,7 @@ SEARCH_LIMIT = 2000     # most folders looked in for a project's .py files
 PROGRAMS_LIMIT = 1000   # most .py files offered as a project's main program
 # Project options until they are changed on a tool page
 DEFAULT_SITE_PACKAGES = True
+DEFAULT_STANDALONE = False
 # The program's version, if it sets one: progVersion = '1.0.0' (also __version__ / VERSION / version)
 VERSION_LINE = re.compile(r"""^\s*(?:progVersion|__version__|VERSION|version)\s*=\s*['"]([^'"\s]+)['"]""", re.M)
 VERSION_OK = re.compile(r"[0-9A-Za-z._+-]+")   # it becomes part of the zip's file name
@@ -267,10 +271,13 @@ def shut_down(reason):
 
 
 # ---------- open pages: the app stops once the last one has gone ----------
-PAGE_GRACE = 10     # seconds to wait after the last page closed: a reload or a link opens the next page well within this
+PAGE_GRACE = 20     # seconds to wait after the last page closed: a reload or a link opens the next page well within this,
+                    # and reopening the app within it (e.g. a tab closed by mistake) keeps it running
 PAGE_TIMEOUT = 90   # a visible page not heard from for this long counts as closed (a browser that crashed or was killed).
-                    # A hidden page (minimized, another tab or app in front) never times out: browsers slow, freeze or
-                    # discard hidden pages, so its silence says nothing. Closing it still sends /api/bye.
+PAGE_HIDDEN_TIMEOUT = 600   # the same for a hidden page (minimized, another tab or app in front). Browsers slow hidden
+                    # pages' timers down to about once a minute, so one still open keeps saying it is alive; one frozen or
+                    # discarded by the browser goes quiet and counts as closed (it shows "Server closed" if it comes back).
+                    # Without this, a browser killed while the page was hidden - no /api/bye - kept the app running forever.
 pages = {}          # page id -> {"seen": when it was last heard from, "hidden": bool, "seq": number of its last message}
 closed_pages = {}   # page id -> number of its /api/bye, so a message sent before it but arriving later is ignored
 pages_lock = threading.Lock()
@@ -278,14 +285,14 @@ page_seen = False   # until a page has opened, the app keeps waiting (e.g. on a 
 
 
 def watch_pages():
-    """Stop the app once every page has closed (or, while visible, gone quiet for PAGE_TIMEOUT)."""
+    """Stop the app once every page has closed (or gone quiet for PAGE_TIMEOUT, PAGE_HIDDEN_TIMEOUT if hidden)."""
     empty_since = None
     while True:
         time.sleep(2)
         now = time.monotonic()
         with pages_lock:
             for page, p in list(pages.items()):
-                if not p["hidden"] and now - p["seen"] > PAGE_TIMEOUT:
+                if now - p["seen"] > (PAGE_HIDDEN_TIMEOUT if p["hidden"] else PAGE_TIMEOUT):
                     del pages[page]
             open_pages = len(pages)
         if not page_seen or open_pages:
@@ -445,8 +452,10 @@ def options_for(project, data=None):
                     found[0] if len(found) == 1 else in_code[0] if len(in_code) == 1 else "")
 
     site = saved.get("site_packages")
+    standalone = saved.get("standalone")
     return {"main": main,
-            "site_packages": site if isinstance(site, bool) else DEFAULT_SITE_PACKAGES}
+            "site_packages": site if isinstance(site, bool) else DEFAULT_SITE_PACKAGES,
+            "standalone": standalone if isinstance(standalone, bool) else DEFAULT_STANDALONE}
 
 
 def requirements_places(opts):
@@ -490,7 +499,8 @@ def project_view(path, data=None):
                     has_readme=os.path.isfile(os.path.join(path, README)),
                     requirements=requirements_file(path, opts),
                     venv=os.path.isfile(venv_python(os.path.join(path, "venv"))),
-                    launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "")
+                    launcher=launcher_name() if os.path.isfile(os.path.join(path, launcher_name())) else "",
+                    standalone_dir=os.path.isdir(standalone_dir(path)))
     return view
 
 
@@ -645,8 +655,9 @@ def workflow_view(raw, replace_settings=False):
                         f"repository, so choose {top} instead.")
     if not manifests:
         warnings.append("There is no plugin.json in this folder or below it, so this is not a DWC plugin: the workflow "
-                        "will release a standalone ZIP of the whole repository (<repository>-<version>.zip, the version "
-                        "taken from the tag), with no build and no DWC dependency.")
+                        "releases only its standalone ZIP (<repository>-<version>.zip, the version taken from the tag), "
+                        "which needs a standalone/ folder - run Prepare with \"Create standalone\" ticked and commit it. "
+                        "Without one the release stops with an error.")
     elif len(manifests) > 1 and "/" in manifests[0]:
         problems.append("There is more than one plugin.json (" + ", ".join(manifests) + ") and none at the top: the "
                         "workflow would stop with an error. Remove the extra ones first.")
@@ -879,15 +890,19 @@ def venv_uses_system(venv):
     return None
 
 
-def write_launcher(project, opts, req, lines):
-    """Add run.sh and run.bat to the project, to start the program with its venv, unless they are there already. Both
-    are made whichever computer Prepare runs on, so a release of the project (zipped from its repository) can be
-    started on Linux and on Windows. With no venv - e.g. the project just unzipped from a release, which never holds
-    one - the launcher makes it first and installs req (requirements.txt, relative to the project) into it. On Linux
-    the venv can see the system's packages (--system-site-packages); on Windows it cannot, as Prepare makes it."""
+# The first line of a launcher's comment: marks a launcher Prepare made, which it may make again (see make_standalone)
+LAUNCHER_MARK = "(made by Prepare in Prep_and_Package)"
+
+
+def launcher_texts(opts, req):
+    """run.sh and run.bat, to start the main program with its venv from the project folder (or the top of the
+    standalone ZIP, which holds the project folder's files). With no venv - e.g. just unzipped from a release, which
+    never holds one - the launcher makes it first and installs req (requirements.txt, relative to the project) into
+    it. On Linux the venv can see the system's packages (--system-site-packages); on Windows it cannot, as Prepare
+    makes it."""
     main = opts["main"]
     win_main, win_req = main.replace("/", "\\"), req.replace("/", "\\")
-    launchers = {
+    return {
         "run.sh": ("#!/bin/bash\n"
                    "# Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\n"
                    f"# unzipped from a release - it is made first, able to see the system's packages, and {req}\n"
@@ -918,7 +933,13 @@ def write_launcher(project, opts, req, lines):
                     "rmdir /s /q venv 2>nul\r\n"
                     "exit /b 1\r\n"),
     }
-    for name, text in launchers.items():
+
+
+def write_launcher(project, opts, req, lines):
+    """Add run.sh and run.bat to the project, to start the program with its venv, unless they are there already. Both
+    are made whichever computer Prepare runs on, so a release of the project (zipped from its repository) can be
+    started on Linux and on Windows."""
+    for name, text in launcher_texts(opts, req).items():
         path = os.path.join(project, name)
         if os.path.exists(path):
             lines.append(f"{name}: already there, left as it is")
@@ -926,7 +947,129 @@ def write_launcher(project, opts, req, lines):
         with open(path, "w", encoding="utf-8", newline="") as f:
             f.write(text)
         os.chmod(path, 0o755)
-        lines.append(f"{name}: made, to start {main} with the venv")
+        lines.append(f"{name}: made, to start {opts['main']} with the venv")
+
+
+# ---------- Create standalone ----------
+# The release workflow builds a standalone ZIP when the repository has a standalone/ folder at its top (see
+# scripts/release-standalone.mjs in the "plugin release workflow" folder). Prepare makes it, with "Create standalone"
+# ticked: the launchers, source.txt naming the project folder (whose files are at the top of the ZIP) and exclude.txt.
+STANDALONE_DIR = "standalone"
+# Lines Prepare makes sure the repository's .gitattributes has: Linux line endings for the shell launcher (bash fails
+# on Windows ones) and Windows ones for the batch file
+STANDALONE_GITATTRIBUTES = (("*.sh", "text eol=lf"), ("*.bat", "text eol=crlf"))
+
+
+def standalone_dir(project):
+    """The standalone/ folder for project: at the top of its git repository (where the release workflow looks), or
+    in the project folder if it is not in one."""
+    return os.path.join(git_top(project) or project, STANDALONE_DIR)
+
+
+def git_ignored(repo, rel):
+    """Whether git ignores rel (a path relative to repo, which need not exist). False without git."""
+    try:
+        return subprocess.run(["git", "-C", repo, "check-ignore", "-q", "--no-index", rel],
+                              stdin=subprocess.DEVNULL, capture_output=True, timeout=30).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def append_lines(path, comment, new_lines):
+    """Add a comment and new_lines to the end of the text file path (made if missing), keeping its line endings."""
+    text = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
+            text = f.read()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    if text and not text.endswith("\n"):
+        text += newline
+    if text:
+        text += newline   # a blank line before what is added
+    text += newline.join(["# " + comment, *new_lines]) + newline
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+
+
+def make_standalone(project, opts, req, lines):
+    """Make the standalone/ folder: run.sh and run.bat (paths relative to the project folder, as its files are at the
+    top of the ZIP), source.txt and exclude.txt, and keep git from ignoring the launchers or committing built ZIPs."""
+    top = git_top(project) or project
+    sdir = os.path.join(top, STANDALONE_DIR)
+    os.makedirs(sdir, exist_ok=True)
+    source = os.path.relpath(project, top).replace(os.sep, "/")
+    shown = os.path.relpath(sdir, top).replace(os.sep, "/") if top != project else STANDALONE_DIR
+    lines.append(f"Folder: {sdir}")
+
+    # source.txt: always Prepare's to set - the project folder is what the ZIP is made from
+    text = ("# The folder the standalone ZIP is made from, relative to the repository root (made by Prepare in\n"
+            "# Prep_and_Package: the project folder). Its files go at the top of the ZIP, with this folder's on top.\n"
+            f"{source}\n")
+    path = os.path.join(sdir, "source.txt")
+    old = open(path, encoding="utf-8", errors="replace").read() if os.path.isfile(path) else None
+    if old != text:
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+    lines.append(f"{shown}/source.txt: {'unchanged' if old == text else 'updated' if old else 'made'} - the ZIP is made from {source}")
+
+    # exclude.txt: the user's to change, so only made when missing
+    path = os.path.join(sdir, "exclude.txt")
+    if os.path.exists(path):
+        lines.append(f"{shown}/exclude.txt: already there, left as it is")
+    else:
+        plugin_only = [n for n in ("plugin.json", "sd/", "www/") if os.path.exists(os.path.join(project, n.rstrip("/")))]
+        text = ("# Left out of the standalone ZIP, as well as what scripts/release-exclude.txt leaves out. One pattern per\n"
+                "# line, relative to the project folder (see source.txt) - the rules are in scripts/release-exclude.txt.\n")
+        if plugin_only:
+            text += "\n# Only used when installed as a DWC plugin\n" + "".join(n + "\n" for n in plugin_only)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        lines.append(f"{shown}/exclude.txt: made" + (f", leaving out {', '.join(plugin_only)}" if plugin_only else ""))
+
+    # The launchers: made again when Prepare made them (they carry LAUNCHER_MARK), so a new main program or
+    # requirements.txt reaches them; one without the mark is the user's own and is left alone
+    for name, text in launcher_texts(opts, req).items():
+        path = os.path.join(sdir, name)
+        old = open(path, encoding="utf-8", errors="replace", newline="").read() if os.path.isfile(path) else None
+        if old == text:
+            lines.append(f"{shown}/{name}: unchanged, starts {opts['main']}")
+            continue
+        if old is not None and LAUNCHER_MARK not in old:
+            lines.append(f"{shown}/{name}: your own (no '{LAUNCHER_MARK}' line), left as it is")
+            continue
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        os.chmod(path, 0o755)
+        lines.append(f"{shown}/{name}: {'updated' if old else 'made'}, starts {opts['main']}")
+
+    if git_top(project) is None:
+        lines.append("Not a git repository: nothing added to .gitignore or .gitattributes")
+        return
+    # .gitignore: the launchers must be committed (e.g. a *.sh rule would hide run.sh), built ZIPs must not be
+    unignore = [f"!{STANDALONE_DIR}/{n}" for n in ("run.sh", "run.bat") if git_ignored(top, f"{STANDALONE_DIR}/{n}")]
+    ignore = [] if git_ignored(top, f"{STANDALONE_DIR}/release.zip") else [f"{STANDALONE_DIR}/*.zip"]
+    if unignore or ignore:
+        append_lines(os.path.join(top, ".gitignore"),
+                     "Standalone ZIP: commit the launchers, not the ZIPs built locally (added by Prep_and_Package)",
+                     ignore + unignore)
+        lines.append(f".gitignore: added {', '.join(ignore + unignore)}")
+    # .gitattributes: line endings that work on the computer each launcher runs on
+    path = os.path.join(top, ".gitattributes")
+    have = set()
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                words = line.split()
+                if words:
+                    have.update((words[0], w) for w in words[1:])
+    missing = [f"{pattern} {attrs}" for pattern, attrs in STANDALONE_GITATTRIBUTES
+               if (pattern, attrs.split()[-1]) not in have]
+    if missing:
+        append_lines(path, "Launchers' line endings: Linux ones for .sh, Windows ones for .bat (added by Prep_and_Package)",
+                     missing)
+        lines.append(f".gitattributes: added {', '.join(missing)}")
+    lines.append(f"Commit the {STANDALONE_DIR}/ folder: the release workflow then builds the standalone ZIP "
+                 f"(try it with: node scripts/release-standalone.mjs --list)")
 
 
 def run_prepare_job(lines, project, opts):
@@ -1016,8 +1159,12 @@ def run_prepare_job(lines, project, opts):
             if code != 0:
                 lines.append("Some packages could not be imported: fix requirements.txt (or install what the error "
                              "asks for) and press Prepare again")
-        lines.append("=== Launcher ===")
-        write_launcher(project, opts, req.replace(os.sep, "/"), lines)
+        if opts["standalone"]:
+            lines.append("=== Standalone folder (for the release workflow's standalone ZIP) ===")
+            make_standalone(project, opts, req.replace(os.sep, "/"), lines)
+        else:
+            lines.append("=== Launcher ===")
+            write_launcher(project, opts, req.replace(os.sep, "/"), lines)
 
         version = program_version(project, opts["main"])
         lines.append("")
@@ -1193,7 +1340,10 @@ def api_project_options():
     site = d.get("site_packages")
     if not isinstance(site, bool):
         return jsonify(error="System site packages: invalid value"), 400
-    err = remember_project(path, main=main, site_packages=site)
+    standalone = d.get("standalone", options_for(path)["standalone"])
+    if not isinstance(standalone, bool):
+        return jsonify(error="Create standalone: invalid value"), 400
+    err = remember_project(path, main=main, site_packages=site, standalone=standalone)
     if err:
         return jsonify(error=f"Could not save the settings file: {err}"), 500
     return jsonify(project_view(path))

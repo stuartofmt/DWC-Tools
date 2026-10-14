@@ -12,23 +12,32 @@ async function post(url, body){
 }
 // Tell the app this page is open (and whether it is hidden), every few seconds, and when it closes: the app stops once
 // every page has gone. A hidden page (minimized, another tab or app in front) may be slowed, frozen or discarded by
-// the browser, so the app does not expect to hear from it until it is shown again; closing it still says bye.
+// the browser, so the app waits much longer to hear from it (PAGE_HIDDEN_TIMEOUT); closing it still says bye.
 const pageId = Math.random().toString(36).slice(2) + Date.now().toString(36);
 let pageSeq = 0;   // numbers the messages, so the app can ignore one that arrives after a newer one
+// Set once the page has said bye. Closing a tab fires pagehide (bye) and THEN visibilitychange - an "alive, hidden"
+// sent then would bring the page back as hidden, and the app would keep running until that timed out.
+let leaving = false;
+let unanswered = 0;   // messages in a row the app did not answer: it has stopped, so say so on the page
 function alive(){
-  if(ui.closed) return;
+  if(ui.closed || leaving) return;
   const hidden = document.visibilityState === "hidden";
   const body = JSON.stringify({page:pageId, seq:++pageSeq, hidden});
   // A beacon is still sent while the page is being hidden (and may be frozen straight after)
   if(hidden) navigator.sendBeacon("/api/alive", body);
-  else fetch("/api/alive", {method:"POST", headers:{"Content-Type":"application/json"}, body}).catch(() => {});
+  else fetch("/api/alive", {method:"POST", headers:{"Content-Type":"application/json"}, body})
+    .then(r => { unanswered = r.ok ? 0 : unanswered; }, () => { if(++unanswered >= 2) ui.closed = true; });
 }
 alive();
 setInterval(alive, 5000);
 addEventListener("visibilitychange", alive);
 addEventListener("freeze", alive);   // Chrome: about to be frozen (it is hidden by then)
-addEventListener("pagehide", () => navigator.sendBeacon("/api/bye", JSON.stringify({page:pageId, seq:++pageSeq})));
-addEventListener("pageshow", e => { if(e.persisted) alive(); });   // back again from the browser's back/forward cache
+addEventListener("pagehide", () => {
+  leaving = true;
+  navigator.sendBeacon("/api/bye", JSON.stringify({page:pageId, seq:++pageSeq}));
+});
+// Back again from the browser's back/forward cache
+addEventListener("pageshow", e => { if(e.persisted){ leaving = false; alive(); } });
 
 // ---------- page frame: app bar with the links and Exit, the page's title and content, errors ----------
 const LINKS = [
@@ -141,7 +150,7 @@ const ProjectPicker = {
   setup(props, {emit}){
     const path = ref(""), recent = ref([]), view = ref(null), optsOpen = ref([]), menu = ref(false);
     const note = reactive({text:"", kind:""}), optNote = reactive({text:"", kind:""});
-    const options = reactive({main:"", site:false});
+    const options = reactive({main:"", site:false, standalone:false});
     const { smAndUp, xs } = Vuetify.useDisplay();
     let seq = 0, typing = null, remembered = null;
 
@@ -159,6 +168,7 @@ const ProjectPicker = {
         const o = j.options;
         options.main = o.main;
         options.site = o.site_packages;
+        options.standalone = o.standalone;
         if(!o.main){
           optsOpen.value = ["opts"];
           note.kind = "bad"; note.text = `Project "${j.name}": choose its main program in the options below`;
@@ -240,7 +250,8 @@ const ProjectPicker = {
     function commit(){ clearTimeout(typing); check(current(), true); }
     async function saveOptions(){
       const r = await fetch("/api/project/options", {method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({path: current(), main: options.main || "", site_packages: options.site})});
+        body: JSON.stringify({path: current(), main: options.main || "", site_packages: options.site,
+                             standalone: options.standalone})});
       const j = await r.json();
       optNote.kind = r.ok ? "" : "bad";
       optNote.text = r.ok ? "Saved" : j.error;
@@ -389,6 +400,8 @@ const ProjectPicker = {
           </div>
           <v-checkbox v-model="options.site" hide-details @update:model-value="saveOptions"
                       label="The venv can also use Python packages already installed on the system (--system-site-packages)"></v-checkbox>
+          <v-checkbox v-model="options.standalone" hide-details @update:model-value="saveOptions"
+                      label="Create standalone: Prepare makes a standalone/ folder at the top of the git repository, so the release workflow also releases a ZIP that runs without DWC"></v-checkbox>
           <div :class="['note', optNote.kind]">{{ optNote.text }}</div>
           <div class="note">Saved as soon as you change them. Packages are installed into the venv with pip, from the project's requirements.txt.
             A change to the system packages option takes effect at the next Prepare, which then makes a new venv.</div>

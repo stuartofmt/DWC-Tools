@@ -104,8 +104,15 @@ scripts/release-titles.txt         settings: the names used for release titles</
 <p>Copy is refused when the folder is inside a git checkout but is not its top (GitHub only runs workflows from the top's
 <code>.github</code> folder), or when there is more than one <code>plugin.json</code> and none at the top (the workflow
 would stop with an error). With no <code>plugin.json</code> at all the folder is not a plugin: Copy still works, and the workflow then
-releases a standalone ZIP of the whole repository, <code>&lt;repository&gt;-&lt;version&gt;.zip</code> with the version taken from the tag,
-without building anything or depending on DWC. A folder that is not a git repository yet can be used: the workflow runs once it is on GitHub.</p>
+releases only its standalone ZIP, <code>&lt;repository&gt;-&lt;version&gt;.zip</code> with the version taken from the tag, without building
+anything or depending on DWC - which needs a <code>standalone/</code> folder (below). A folder that is not a git repository yet can be used: the
+workflow runs once it is on GitHub.</p>
+<p>The standalone ZIP: tick <b>Create standalone</b> in Prepare's project options and run Prepare. It makes a <code>standalone/</code> folder at
+the top of the git repository with the <code>run.sh</code> / <code>run.bat</code> launchers, <code>source.txt</code> (the project folder) and
+<code>exclude.txt</code>. Once it is committed, the workflow builds the ZIP - the project folder's files, without what <code>exclude.txt</code>
+lists, plus the launchers - and attaches it to the Release: <code>standalone-&lt;id&gt;-&lt;version&gt;.zip</code> next to a plugin ZIP, or
+<code>&lt;repository&gt;-&lt;version&gt;.zip</code> on its own. <code>node scripts/release-standalone.mjs</code> builds it locally to try it out.
+<code>release.yml.md</code> has the details.</p>
 <p>Once per repository on GitHub: allow Actions (Settings → Actions → General) and add an environment named exactly
 <code>dwc-release-approval</code> with yourself as a required reviewer (Settings → Environments). <code>release.yml.md</code> explains this
 and how to release.</p>
@@ -121,11 +128,12 @@ Venvs are made with <code>{{ c.python || "..." }}</code>, the Python outside any
       Stopping Prepare part way can leave the venv without every package: press Prepare again.</li>
   <li><b>Exit</b> stops everything and shuts the app down (so does Ctrl+C in the terminal).</li>
   <li>Closing the page does the same: once every page of the app has been closed, in every browser that had it open, the app stops any running job and shuts down
-      about 10 seconds later. Going to another page of the app, or reloading, does not count, and nor does minimizing the browser, switching to
-      another tab or app, or leaving the page alone for a long time: the app has no time limit. A page in front that stops answering
-      (for example after the browser crashed) counts as closed after 90 seconds. If the browser crashes (or a phone closes the page in the background)
-      while the app's page is hidden, the app keeps running: use Exit, or Ctrl+C in its terminal. Until a page has been opened for the first time, the app keeps waiting.
-      So keep a page open while Prepare runs: closing it stops Prepare.</li>
+      20 seconds later - open the app's address again within that time (e.g. after closing a tab by mistake) and it keeps running. Going to another
+      page of the app, or reloading, does not count, and nor does minimizing the browser, switching to another tab or app, or leaving the page
+      alone for a long time. A page in front that stops answering (for example after the browser crashed) counts as closed after 90 seconds; a
+      hidden one (minimized, or another tab in front) after 10 minutes, so a browser that crashed or was killed while the app's page was hidden
+      still stops it. A page left open after the app has stopped says "Server closed". Until a page has been opened for the first time, the
+      app keeps waiting. So keep a page open while Prepare runs: closing it stops Prepare.</li>
   <li>The Home page shows which tools are currently running.</li>
 </ul>
 

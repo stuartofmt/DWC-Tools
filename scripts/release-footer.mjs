@@ -9,22 +9,35 @@
  * The DWC details come from the CI build environment (the release workflow sets these after it checks
  * out DuetWebControl), so it also reads sensibly when run locally.
  *
- * A repository with no plugin.json is released as a standalone ZIP, <name>-<version>.zip: the name and
- * version come from PLUGIN_NAME and PLUGIN_VERSION (set by the release workflow), else the repository's
- * name and the tag.
+ * A repository with a standalone/ folder is also - or, with no plugin.json, only - released as a standalone ZIP
+ * (see ./release-standalone.mjs): standalone-<id>-<version>.zip next to a plugin ZIP, <name>-<version>.zip on its
+ * own. The footer says how to run it, using the launchers in standalone/ (run.sh, run.bat). Without a plugin.json
+ * the name and version come from PLUGIN_NAME and PLUGIN_VERSION (set by the release workflow), else the
+ * repository's name and the newest tag.
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { isStandalone, needsDwcBuild, readManifest, repoRoot, standaloneName } from "./manifest.mjs";
+import {
+	hasStandaloneBuild, isStandalone, needsDwcBuild, readManifest, repoRoot, STANDALONE_DIR, standaloneName,
+	standaloneVersion, standaloneZipName,
+} from "./manifest.mjs";
+
+/** How to start the standalone ZIP's program, from the launchers in standalone/. */
+function howToRun() {
+	const has = (name) => existsSync(join(repoRoot, STANDALONE_DIR, name));
+	const ways = [has("run.sh") && "`./run.sh` on Linux", has("run.bat") && "`run.bat` on Windows"].filter(Boolean);
+	return ways.length
+		? `unzip it where the program should live and start it with ${ways.join(" or ")} (the first start sets up its Python environment)`
+		: "unzip it where the program should live";
+}
 
 if (isStandalone()) {
 	const name = process.env.PLUGIN_NAME || standaloneName();
-	const version = process.env.PLUGIN_VERSION || (process.env.GITHUB_REF_NAME || "").replace(/^v/, "");
-	const asset = `${name}-${version}.zip`;
+	const asset = standaloneZipName(standaloneVersion());
 	process.stdout.write(`---
 
 ### 📦 Download ${name}
-Download \`${asset}\` from the **Assets** below and unzip it.
+Download \`${asset}\` from the **Assets** below, ${howToRun()}.
 
 > 🔧 Standalone release - not a DWC plugin, so it does not depend on any DuetWebControl version.
 `);
@@ -71,6 +84,15 @@ const buildNote = built
 	? `Built against ${dwcBuiltAgainst}.`
 	: "Packaged without a DWC build (this plugin has no DWC interface).";
 
+// The standalone ZIP, if one is built: how to run the program without DWC
+let standaloneSection = "";
+if (hasStandaloneBuild()) {
+	standaloneSection = `
+### 🖥️ Run ${manifest.name || manifest.id} without DWC (standalone)
+Download \`${standaloneZipName(pkgVersion, manifest)}\` from the **Assets** below, ${howToRun()}. It does not need DuetWebControl or a Duet.
+`;
+}
+
 const out = `
 ---
 
@@ -81,7 +103,7 @@ const out = `
 4. Reload DWC if asked.
 ${seeAlso}
 > 🔧 ${buildNote} ${requirement}.
-
+${standaloneSection}
 <!-- dwc-plugin-update ${JSON.stringify({ version: pkgVersion, dwcVersion: requiredDwc, asset })} -->
 `;
 
