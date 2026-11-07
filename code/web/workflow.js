@@ -3,6 +3,7 @@ mountPage(() => {
   const ACTIONS = {
     new:     {text: "added", color: "success"},
     replace: {text: "replaced", color: "warning"},
+    update:  {text: "line added", color: "info"},
     remove:  {text: "removed (old workflow file)", color: "error"},
     same:    {text: "already the same", color: undefined},
     keep:    {text: "kept (the plugin's own)", color: "info"},
@@ -15,7 +16,7 @@ mountPage(() => {
 
   const current = () => (path.value || "").trim();
   // Copy is possible for a usable folder with something to copy
-  const toCopy = computed(() => view.value && view.value.exists ? view.value.plan.filter(f => ["new", "replace", "remove"].includes(f.action)) : []);
+  const toCopy = computed(() => view.value && view.value.exists ? view.value.plan.filter(f => ["new", "replace", "update", "remove"].includes(f.action)) : []);
   const canCopy = computed(() => !!(view.value && view.value.exists && !view.value.problems.length && toCopy.value.length));
   const summary = computed(() => {
     if(!view.value || !view.value.exists || view.value.problems.length) return "";

@@ -17,6 +17,7 @@ jobs:
 | `.github/workflows/release.yml` - the short caller, named **Release** in the Actions tab | `.github/workflows/plugin-release.yml` - this workflow, and these notes |
 | `plugin.json`, the tags and Releases | `scripts/` - `manifest.mjs`, `prune-release.mjs`, `release-patterns.mjs`, `release-standalone.mjs`, `release-title.mjs`, `release-footer.mjs` and `release.sh` |
 | `scripts/release-channel.txt`, `scripts/release-exclude.txt`, `scripts/release-titles.txt` | |
+| `scripts/release.sh` - a small script that runs the shared `release.sh` | |
 | `standalone/`, and the `dwc-release-approval` environment | |
 
 Releasing one repository never affects another: its tag, title, notes, channel and files all come from that repository. The shared scripts work on the repository they are run in, and read its settings from its own `scripts/` folder.
@@ -29,6 +30,8 @@ Run them from **inside** the repository to release - they work on the git reposi
 cd ~/DWC/Plugins/MyPlugin
 ~/DWC/Tools/Prep_and_Package/scripts/release.sh
 ```
+
+To release, each repository's own `scripts/release.sh` (copied by Prep_and_Package) does this for you: it runs the shared `release.sh` on the repository it is in, from wherever it is started. It expects the DWC-Tools checkout at `~/DWC/Tools/Prep_and_Package`; if it is elsewhere, set `DWC_TOOLS` to it (e.g. `DWC_TOOLS=/path/to/Prep_and_Package scripts/release.sh`).
 
 ### Versions of the shared workflow
 
@@ -76,9 +79,9 @@ For a plugin with no `dwcVersion`, the tag is just `v` and the version, e.g. `v1
 
 Make sure the commit from step 1 is the one checked out when you run `git tag`, because the tag is attached to whatever commit you are currently on.
 
-Alternatively, run `~/DWC/Tools/Prep_and_Package/scripts/release.sh` from inside the repository. It reads the version and `dwcVersion` from `plugin.json` (and the channel from `scripts/release-channel.txt`), reports whether that tag has already been used, and creates and pushes the tag for you. It never changes `plugin.json`.
+Alternatively, run `scripts/release.sh` in the repository (or the shared `~/DWC/Tools/Prep_and_Package/scripts/release.sh` from inside it). It reads the version and `dwcVersion` from `plugin.json` (and the channel from `scripts/release-channel.txt`), reports whether that tag has already been used, and creates and pushes the tag for you. It never changes `plugin.json`.
 
-On Windows, run it from **Git Bash** (it comes with Git for Windows, and can be chosen as VS Code's terminal), with the path to your DWC-Tools checkout. It needs Python to read `plugin.json` and uses whichever of `python3`, `python` or `py` works. DWC-Tools' `.gitattributes` keeps `release.sh`'s Linux line endings in a Windows checkout; if bash still stops with `$'\r': command not found`, run `git config core.autocrlf input` in the DWC-Tools checkout, then check the file out again (`git checkout -- scripts/release.sh`).
+On Windows, run it from **Git Bash** (it comes with Git for Windows, and can be chosen as VS Code's terminal), with the path to your DWC-Tools checkout. It needs Python to read `plugin.json` and uses whichever of `python3`, `python` or `py` works. The `.gitattributes` of DWC-Tools and of the repository (Prep_and_Package's Copy adds the line) keep `release.sh`'s Linux line endings in a Windows checkout; if bash still stops with `$'\r': command not found`, run `git config core.autocrlf input` in that checkout, then check the file out again (`git checkout -- scripts/release.sh`).
 
 > [!IMPORTANT]
 > Do **not** create the tag or the Release using the **Releases** page on the GitHub website ("Draft a new release" / "Create a new release"). Doing that publishes a Release before this workflow runs, so the workflow will find an existing Release and ask you to approve overwriting it. Always create the tag with git as shown above and let this workflow create the Release.

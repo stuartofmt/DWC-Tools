@@ -84,15 +84,18 @@ could not be created, that package is missing and has to be installed once by th
 its notes (<a href="https://github.com/stuartofmt/DWC-Tools/blob/Prep_and_Package/.github/workflows/plugin-release.yml.md" target="_blank" rel="noopener">plugin-release.yml.md</a>) and the scripts it runs in <code>scripts/</code>. A plugin only has a short workflow that calls it, and its own
 settings. They are kept in the <code>plugin release workflow</code> folder next to this app's program, laid out as they go into a plugin's folder:</p>
 <pre>.github/workflows/release.yml      calls the shared workflow, which builds the plugin's ZIP on GitHub and publishes the release
+scripts/release.sh                 runs the shared release script in DWC-Tools, to tag and release
 scripts/release-channel.txt        settings: "latest" or "maintenance" for this branch
 scripts/release-exclude.txt        settings: files to leave out of the ZIP
 scripts/release-titles.txt         settings: the names used for release titles</pre>
-<p>To tag and release the version in <code>plugin.json</code> (or the one you enter), run <code>~/DWC/Tools/Prep_and_Package/scripts/release.sh</code>
-from inside the plugin's repository. A change to the shared workflow or its scripts reaches every plugin at its next release once the
+<p>To tag and release the version in <code>plugin.json</code> (or the one you enter), run <code>scripts/release.sh</code> in the plugin's
+repository. It runs the shared <code>~/DWC/Tools/Prep_and_Package/scripts/release.sh</code> (set <code>DWC_TOOLS</code> to the
+Prep_and_Package checkout if it is somewhere else). A change to the shared workflow or its scripts reaches every plugin at its next release once the
 <code>workflow-v1</code> tag is moved - the notes explain how. A plugin that had the old full copy of the workflow also has
-<code>.github/workflows/release.yml.md</code>, <code>scripts/release.sh</code> and <code>scripts/*.mjs</code> (<code>manifest.mjs</code>,
+<code>.github/workflows/release.yml.md</code> and <code>scripts/*.mjs</code> (<code>manifest.mjs</code>,
 <code>prune-release.mjs</code>, <code>release-footer.mjs</code>, <code>release-title.mjs</code>, <code>release-patterns.mjs</code>,
-<code>release-standalone.mjs</code>): Copy removes them, as they now run from DWC-Tools.</p>
+<code>release-standalone.mjs</code>): Copy removes them, as they now run from DWC-Tools, and replaces its full
+<code>scripts/release.sh</code> with the small one.</p>
 <ol>
   <li>Choose the plugin's folder on this computer: the top of its git checkout (the folder holding <code>.git</code>), with the plugin's
       <code>plugin.json</code> in it or below it. Type its path, pick a recent one, or press <b>Browse…</b>, where folders with a
@@ -100,7 +103,9 @@ from inside the plugin's repository. A change to the shared workflow or its scri
   <li>The page lists every file of the workflow and what <b>Copy</b> will do with it: <b>added</b> (not there yet), <b>replaced</b> (there, but
       different), <b>already the same</b>, <b>kept</b>, or <b>removed</b> (a file of the old full workflow). The three settings files are the plugin's own: one already in the repository is kept,
       so copying again to update the workflow never loses your settings. Tick <b>Replace the plugin's settings files too</b> to overwrite them
-      with the ones from this app. Nothing else in the repository is changed.</li>
+      with the ones from this app. The repository's <code>.gitattributes</code> gets the line <code>*.sh text eol=lf</code> (<b>line added</b>,
+      or <b>added</b> if there is no <code>.gitattributes</code>), so <code>release.sh</code> keeps Linux line endings in a Windows checkout and
+      Git Bash can run it. Nothing else in it is changed.</li>
   <li>Press <b>Copy</b>. Only the files in that folder change: Copy never commits or pushes. Commit the new files and push them yourself;
       that is when the workflow reaches GitHub (commit the removed files too, e.g. <code>git add -A</code>).</li>
 </ol>

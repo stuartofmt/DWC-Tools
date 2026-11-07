@@ -20,8 +20,9 @@ With the project option "Create standalone" ticked, it instead makes <repository
 standalone ZIP (see make_standalone): the launchers, source.txt (the project folder) and exclude.txt.
 
 Copy Plugin Release Workflow copies the files in the "plugin release workflow" folder next to this script
-(.github/workflows/release.yml, the short caller of DWC-Tools' shared plugin-release.yml, and the settings in scripts/)
-into the top of a plugin's git checkout on disk, and removes the files of the old full per-plugin workflow
+(.github/workflows/release.yml, the short caller of DWC-Tools' shared plugin-release.yml, scripts/release.sh, which
+runs the shared release script, and the settings in scripts/) into the top of a plugin's git checkout on disk, adds
+GITATTRIBUTES_LINE to its .gitattributes, and removes the files of the old full per-plugin workflow
 (OBSOLETE_WORKFLOW_FILES); it never commits or pushes, so the changes reach GitHub when the user commits and pushes them.
 The workflow's settings files (WORKFLOW_SETTINGS) belong to the plugin, so one already there is kept unless asked to
 replace it.
@@ -527,7 +528,7 @@ def check_project(raw, need_requirements=True):
 
 # ---------- Copy Plugin Release Workflow ----------
 # The GitHub release workflow for DWC plugins lives in the "plugin release workflow" folder next to this script, laid
-# out as it goes into a plugin's folder: .github/workflows/release.yml and the settings in scripts/. It is copied into
+# out as it goes into a plugin's folder: .github/workflows/release.yml, scripts/release.sh and the settings in scripts/. It is copied into
 # the top of the plugin's git checkout on disk, as GitHub only runs workflows from the top of a repository. Only files on
 # disk are written: nothing is committed or pushed.
 WORKFLOW_DIR = os.path.join(SCRIPT_DIR, "plugin release workflow")
@@ -537,10 +538,14 @@ WORKFLOW_SETTINGS = ("scripts/release-channel.txt", "scripts/release-exclude.txt
 MANIFEST_SKIP = (".git", "node_modules", "venv")
 MANIFEST_DEPTH = 3   # how far below a folder Browse looks for a plugin.json when marking plugin folders
 # The old full per-plugin workflow's files, from before plugins called the shared plugin-release.yml in DWC-Tools: Copy
-# removes any still in the plugin's folder (the page lists them first). The scripts now run from DWC-Tools.
-OBSOLETE_WORKFLOW_FILES = (".github/workflows/release.yml.md", "scripts/release.sh", "scripts/manifest.mjs",
+# removes any still in the plugin's folder (the page lists them first). The scripts now run from DWC-Tools; the old
+# full scripts/release.sh is replaced by the small one that runs DWC-Tools' copy.
+OBSOLETE_WORKFLOW_FILES = (".github/workflows/release.yml.md", "scripts/manifest.mjs",
                            "scripts/prune-release.mjs", "scripts/release-footer.mjs", "scripts/release-title.mjs",
                            "scripts/release-patterns.mjs", "scripts/release-standalone.mjs")
+# Added to the plugin's .gitattributes (made if missing; the rest of it is never changed): keeps scripts/release.sh's
+# line endings Linux ones in a Windows checkout, where Git would otherwise convert them and bash could not run it
+GITATTRIBUTES_LINE = "*.sh text eol=lf"
 
 
 def workflow_files():
@@ -612,7 +617,40 @@ def workflow_plan(repo, replace_settings):
         dst = os.path.join(repo, rel)
         if os.path.isfile(dst) and not os.path.islink(dst):
             plan.append({"file": rel, "action": "remove", "setting": False})
+    plan.append({"file": ".gitattributes", "action": gitattributes_action(repo), "setting": False})
     return plan
+
+
+def gitattributes_action(repo):
+    """What Copy does to the plugin's .gitattributes: new (made, holding GITATTRIBUTES_LINE), update (the line added
+    to the end), same (a *.sh line with eol=lf is there already) or blocked."""
+    path = os.path.join(repo, ".gitattributes")
+    if not os.path.lexists(path):
+        return "new"
+    if not os.path.isfile(path):
+        return "blocked"
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            words = line.split()
+            if words and words[0] == "*.sh" and "eol=lf" in words[1:]:
+                return "same"
+    return "update"   # added at the end: a later line wins over an earlier *.sh one
+
+
+def add_gitattributes(repo):
+    """Add GITATTRIBUTES_LINE to the end of the plugin's .gitattributes, making it if there is none."""
+    path = os.path.join(repo, ".gitattributes")
+    text = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8", errors="replace", newline="") as f:
+            text = f.read()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    if text and not text.endswith("\n"):
+        text += newline
+    text += "# Keep shell scripts' line endings Linux ones, so bash can run them (added by Prep_and_Package)" + newline
+    text += GITATTRIBUTES_LINE + newline
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
 
 
 def workflow_view(raw, replace_settings=False):
@@ -652,13 +690,16 @@ def copy_workflow(repo, replace_settings):
     done = []
     for item in workflow_plan(repo, replace_settings):
         rel, action = item["file"], item["action"]
-        if action == "remove":
+        if rel == ".gitattributes" and action in ("new", "update"):
+            add_gitattributes(repo)
+            done.append((rel, "added" if action == "new" else f"updated: {GITATTRIBUTES_LINE} added"))
+        elif action == "remove":
             os.remove(os.path.join(repo, rel))
             done.append((rel, "removed (old per-plugin workflow file)"))
         elif action in ("new", "replace"):
             dst = os.path.join(repo, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(os.path.join(WORKFLOW_DIR, rel), dst)
+            shutil.copy2(os.path.join(WORKFLOW_DIR, rel), dst)   # keeps release.sh executable
             done.append((rel, "added" if action == "new" else "replaced"))
         elif action == "blocked":
             raise OSError(f"{rel} cannot be copied: something that is not a file is in the way")
