@@ -89,20 +89,20 @@ scripts/release-exclude.txt        settings: files to leave out of the ZIP
 scripts/release-titles.txt         settings: the names used for release titles</pre>
 <p>To tag and release the version in <code>plugin.json</code> (or the one you enter), run <code>~/DWC/Tools/Prep_and_Package/scripts/release.sh</code>
 from inside the plugin's repository. A change to the shared workflow or its scripts reaches every plugin at its next release once the
-<code>workflow-v1</code> tag is moved - the notes explain how. Copy never deletes files: a plugin that had the old full copy of the workflow
-still has its <code>.github/workflows/release.yml.md</code> and <code>scripts/*.mjs</code> and <code>scripts/release.sh</code>, which can be deleted.</p>
+<code>workflow-v1</code> tag is moved - the notes explain how. A plugin that had the old full copy of the workflow also has
+<code>.github/workflows/release.yml.md</code>, <code>scripts/release.sh</code> and <code>scripts/*.mjs</code> (<code>manifest.mjs</code>,
+<code>prune-release.mjs</code>, <code>release-footer.mjs</code>, <code>release-title.mjs</code>, <code>release-patterns.mjs</code>,
+<code>release-standalone.mjs</code>): Copy removes them, as they now run from DWC-Tools.</p>
 <ol>
   <li>Choose the plugin's folder on this computer: the top of its git checkout (the folder holding <code>.git</code>), with the plugin's
       <code>plugin.json</code> in it or below it. Type its path, pick a recent one, or press <b>Browse…</b>, where folders with a
       <code>plugin.json</code> (in them or up to 3 levels below) have a <b>plugin</b> tag.</li>
   <li>The page lists every file of the workflow and what <b>Copy</b> will do with it: <b>added</b> (not there yet), <b>replaced</b> (there, but
-      different), <b>already the same</b>, or <b>kept</b>. The three settings files are the plugin's own: one already in the repository is kept,
+      different), <b>already the same</b>, <b>kept</b>, or <b>removed</b> (a file of the old full workflow). The three settings files are the plugin's own: one already in the repository is kept,
       so copying again to update the workflow never loses your settings. Tick <b>Replace the plugin's settings files too</b> to overwrite them
-      with the ones from this app. The repository's <code>.gitattributes</code> gets the line <code>*.sh text eol=lf</code> (<b>line added</b>,
-      or <b>added</b> if there is no <code>.gitattributes</code>), so <code>release.sh</code> keeps Linux line endings in a Windows checkout and
-      Git Bash can run it. Nothing else in it is changed.</li>
+      with the ones from this app. Nothing else in the repository is changed.</li>
   <li>Press <b>Copy</b>. Only the files in that folder change: Copy never commits or pushes. Commit the new files and push them yourself;
-      that is when the workflow reaches GitHub.</li>
+      that is when the workflow reaches GitHub (commit the removed files too, e.g. <code>git add -A</code>).</li>
 </ol>
 <p>Copy is refused when the folder is inside a git checkout but is not its top (GitHub only runs workflows from the top's
 <code>.github</code> folder), or when there is more than one <code>plugin.json</code> and none at the top (the workflow

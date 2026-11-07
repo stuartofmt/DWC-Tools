@@ -45,7 +45,7 @@
       </div>
 
       <v-alert v-if="result" type="success" variant="tonal" class="mb-4">
-        <div v-if="result.done.length">Copied into <code>{{ view.path }}</code>:</div>
+        <div v-if="result.done.length">Changed in <code>{{ view.path }}</code>:</div>
         <div v-else>Nothing needed copying: <code>{{ view.path }}</code> already has this workflow.</div>
         <ul class="ml-6"><li v-for="d in result.done" :key="d.file"><code>{{ d.file }}</code> {{ d.what }}</li></ul>
         <div class="mt-2">Only these files on disk changed. Next: commit them and push, which is when GitHub gets the workflow. Once per repository on GitHub: allow Actions
