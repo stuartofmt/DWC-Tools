@@ -22,15 +22,15 @@
  * build output, so add standalone/*.zip to .gitignore.
  *
  * Usage:
- *   node scripts/release-standalone.mjs           build the ZIP
- *   node scripts/release-standalone.mjs --list    show what would go in it - changes nothing
+ *   node <these scripts>/release-standalone.mjs           build the ZIP (run from inside the repository)
+ *   node <these scripts>/release-standalone.mjs --list    show what would go in it - changes nothing
  */
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import {
-	hasStandaloneBuild, isStandalone, readManifest, repoRoot, STANDALONE_DIR, standaloneSource, standaloneVersion,
+	hasStandaloneBuild, isStandalone, readManifest, repoRoot, scriptsDir, STANDALONE_DIR, standaloneSource, standaloneVersion,
 	standaloneZipName,
 } from "./manifest.mjs";
 import { compile, findMatches, readPatterns, removeMatches } from "./release-patterns.mjs";
@@ -45,7 +45,7 @@ const NOT_COPIED = new Set(["source.txt", "exclude.txt", ".gitignore"]);
 
 const list = process.argv.includes("--list");
 if (process.argv.slice(2).some((a) => a !== "--list")) {
-	console.error("Usage: node scripts/release-standalone.mjs [--list]");
+	console.error(`Usage: node ${join(scriptsDir, "release-standalone.mjs")} [--list]`);
 	process.exit(2);
 }
 if (!hasStandaloneBuild()) {

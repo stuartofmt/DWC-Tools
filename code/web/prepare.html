@@ -4,6 +4,12 @@
   <code>requirements.txt</code> (making <code>code/requirements.txt</code> if there is none), creates the project's <code>venv</code>,
   installs <code>requirements.txt</code> into it, checks that each package can be imported, and adds the launchers
   <code>run.sh</code> and <code>run.bat</code> (both, so a release runs on Linux and Windows) where they are missing. Run it again after changing the imports.</p>
+  <p class="note">Packages only one platform needs go in <code>requirements-linux.txt</code> / <code>requirements-windows.txt</code> next to
+  <code>requirements.txt</code>: Prepare puts a new import there when a platform check guards it (e.g. under
+  <code>if sys.platform == "win32":</code>, or a flag made from one), installs and checks only this computer's files, and
+  <code>run.sh</code> / <code>run.bat</code> install their platform's file as well. A package already in any of the three files stays
+  where it is - move a line to the right file once if Prepare put it in the wrong one. A DWC plugin lists
+  <code>requirements-linux.txt</code> in <code>plugin.json</code> too.</p>
   <p class="note">With <b>Create standalone</b> ticked (in the project options), the launchers go into a <code>standalone/</code> folder at the
   top of the git repository instead, with <code>source.txt</code> (this project folder, whose files are at the top of the ZIP) and
   <code>exclude.txt</code> (what to leave out - for a DWC plugin, <code>plugin.json</code> and <code>sd/</code>). Commit the folder: the

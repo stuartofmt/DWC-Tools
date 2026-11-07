@@ -1,6 +1,44 @@
-# Release workflow (`release.yml`)
+# Release workflow (`plugin-release.yml`)
 
-These notes repeat the comments at the top of [`release.yml`](release.yml). If you change one, update the other.
+## One shared workflow
+
+[`plugin-release.yml`](plugin-release.yml) is the one release workflow for every DWC plugin and standalone program that uses it. Each repository has only a short `.github/workflows/release.yml` that calls it (Prep_and_Package's **Copy Plugin Release Workflow** writes it):
+
+```yaml
+jobs:
+  release:
+    uses: stuartofmt/DWC-Tools/.github/workflows/plugin-release.yml@workflow-v1
+    with:
+      dwc-ref: ${{ inputs.dwc-ref || '' }}
+```
+
+| Belongs to each repository | Shared, in DWC-Tools (`Prep_and_Package` branch) |
+|---|---|
+| `.github/workflows/release.yml` - the short caller, named **Release** in the Actions tab | `.github/workflows/plugin-release.yml` - this workflow, and these notes |
+| `plugin.json`, the tags and Releases | `scripts/` - `manifest.mjs`, `prune-release.mjs`, `release-patterns.mjs`, `release-standalone.mjs`, `release-title.mjs`, `release-footer.mjs` and `release.sh` |
+| `scripts/release-channel.txt`, `scripts/release-exclude.txt`, `scripts/release-titles.txt` | |
+| `standalone/`, and the `dwc-release-approval` environment | |
+
+Releasing one repository never affects another: its tag, title, notes, channel and files all come from that repository. The shared scripts work on the repository they are run in, and read its settings from its own `scripts/` folder.
+
+### Running the scripts on your computer
+
+Run them from **inside** the repository to release - they work on the git repository holding the current folder:
+
+```bash
+cd ~/DWC/Plugins/MyPlugin
+~/DWC/Tools/Prep_and_Package/scripts/release.sh
+```
+
+### Versions of the shared workflow
+
+The callers use the `workflow-v1` tag in DWC-Tools. A change to the workflow or the shared scripts reaches a repository at its next release, once the tag is moved:
+
+1. Change `plugin-release.yml` or `scripts/` on a branch of DWC-Tools and push it.
+2. In one repository, point the caller's `uses:` line **and** `tools-ref` at that branch, and make a [manual test build](#manual-how-to-make-a-test-build-without-releasing-anything). GitHub does not tell a called workflow which version it is, so `tools-ref` says which version of the scripts to use.
+3. When it works, merge it, move the tag (`git tag -f workflow-v1 && git push -f origin workflow-v1`) and put that caller back.
+
+For a change that is not backward compatible (e.g. a new settings file every repository must have), make a `workflow-v2` tag and move the repositories over one at a time. Do not start these tags with `v`: DWC-Tools' own releases use `v*` tags.
 
 ## What this workflow does
 
@@ -38,9 +76,9 @@ For a plugin with no `dwcVersion`, the tag is just `v` and the version, e.g. `v1
 
 Make sure the commit from step 1 is the one checked out when you run `git tag`, because the tag is attached to whatever commit you are currently on.
 
-Alternatively, run `./scripts/release.sh`. It reads the version and `dwcVersion` from `plugin.json` (and the channel from `scripts/release-channel.txt`), reports whether that tag has already been used, and creates and pushes the tag for you. It never changes `plugin.json`.
+Alternatively, run `~/DWC/Tools/Prep_and_Package/scripts/release.sh` from inside the repository. It reads the version and `dwcVersion` from `plugin.json` (and the channel from `scripts/release-channel.txt`), reports whether that tag has already been used, and creates and pushes the tag for you. It never changes `plugin.json`.
 
-On Windows, run `./scripts/release.sh` from **Git Bash** (it comes with Git for Windows, and can be chosen as VS Code's terminal). It needs Python to read `plugin.json` and uses whichever of `python3`, `python` or `py` works. Prep_and_Package's Copy Plugin Release Workflow adds `*.sh text eol=lf` to the repository's `.gitattributes`, so Git keeps `release.sh`'s Linux line endings in a Windows checkout. Without that line, Git may convert them and bash stops with `$'\r': command not found`: add the line (or run `git config core.autocrlf input`), then check the file out again (`git checkout -- scripts/release.sh`).
+On Windows, run it from **Git Bash** (it comes with Git for Windows, and can be chosen as VS Code's terminal), with the path to your DWC-Tools checkout. It needs Python to read `plugin.json` and uses whichever of `python3`, `python` or `py` works. DWC-Tools' `.gitattributes` keeps `release.sh`'s Linux line endings in a Windows checkout; if bash still stops with `$'\r': command not found`, run `git config core.autocrlf input` in the DWC-Tools checkout, then check the file out again (`git checkout -- scripts/release.sh`).
 
 > [!IMPORTANT]
 > Do **not** create the tag or the Release using the **Releases** page on the GitHub website ("Draft a new release" / "Create a new release"). Doing that publishes a Release before this workflow runs, so the workflow will find an existing Release and ask you to approve overwriting it. Always create the tag with git as shown above and let this workflow create the Release.
@@ -127,11 +165,11 @@ If there is no `plugin.json` anywhere in the repository, it is not a DWC plugin 
 - **Release title:** has the branch being released in brackets, e.g. `v1.2.3 (main) — "Sharpened Edge"`.
 - **Release notes:** say it is a standalone release that does not depend on any DWC version, and how to start it.
 
-`./scripts/release.sh` asks for the version to release (it shows the latest `v*` tag) and creates and pushes `v<version>`. It stops if there is no `standalone/` folder.
+`release.sh` asks for the version to release (it shows the latest `v*` tag) and creates and pushes `v<version>`. It stops if there is no `standalone/` folder.
 
 ## The standalone ZIP (standalone/ folder)
 
-A `standalone/` folder at the top of the repository releases the program packaged to run on its own, without DWC. Prep_and_Package's **Prepare** makes the folder when **Create standalone** is ticked: the `run.sh` / `run.bat` launchers, `source.txt` and `exclude.txt`. `scripts/release-standalone.mjs` builds the ZIP into `standalone/`, and it is attached to the Release (and to a manual run's artifact):
+A `standalone/` folder at the top of the repository releases the program packaged to run on its own, without DWC. Prep_and_Package's **Prepare** makes the folder when **Create standalone** is ticked: the `run.sh` / `run.bat` launchers, `source.txt` and `exclude.txt`. `release-standalone.mjs` builds the ZIP into `standalone/`, and it is attached to the Release (and to a manual run's artifact):
 
 - **For a plugin:** `standalone-<id>-<version>.zip`, next to the plugin ZIP - `plugin.json`'s version and the plugin's tag, so one tag releases both.
 - **With no plugin.json:** `<repository name>-<version>.zip`, the only ZIP (see above).
@@ -152,8 +190,8 @@ Folders left empty are dropped.
 To try it locally, from the repository folder:
 
 ```bash
-node scripts/release-standalone.mjs --list   # what would go in the ZIP - changes nothing
-node scripts/release-standalone.mjs          # build the ZIP into standalone/
+node ~/DWC/Tools/Prep_and_Package/scripts/release-standalone.mjs --list   # what would go in the ZIP - changes nothing
+node ~/DWC/Tools/Prep_and_Package/scripts/release-standalone.mjs          # build the ZIP into standalone/
 ```
 
 ## Leaving files out of the ZIP
@@ -165,7 +203,7 @@ The workflow copies the folder holding `plugin.json`, removes the listed files f
 To see what would be left out, run this from the repository folder (it changes nothing):
 
 ```bash
-node scripts/prune-release.mjs --list
+node ~/DWC/Tools/Prep_and_Package/scripts/prune-release.mjs --list
 ```
 
 If `plugin.json` is at the repository root, the whole repository is the plugin folder, so list things such as `docs/`, `scripts/` and `.github/` in `scripts/release-exclude.txt`.
@@ -196,6 +234,6 @@ A run that goes straight from **resolve-dwc** to **build** without asking has no
 2. **Required reviewers is not ticked**, or no reviewer was added, or the settings were not saved.
 3. **The repository is private on a free GitHub plan.** Required reviewers only work in public repositories unless the account has a paid plan (Pro, Team or Enterprise); otherwise the rule is ignored and runs never pause. Make the repository public, or upgrade.
 4. **The name is not exactly `dwc-release-approval`** (e.g. `dwc_release_approval`). The run then uses a different, unprotected environment, which GitHub creates for it - the run's page shows its name.
-5. **The repository has an older `release.yml`** without the approval step: compare it with this one, or copy the workflow again with Prep_and_Package.
+5. **The repository has an older full `release.yml`** (from before the shared workflow) without the approval step: copy the workflow again with Prep_and_Package, which replaces it with the short caller.
 
 If **Prevent self-review** is ticked and you are the only reviewer, the run does pause, but you cannot approve your own run: untick it.

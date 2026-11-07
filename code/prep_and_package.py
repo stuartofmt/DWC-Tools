@@ -780,10 +780,110 @@ def optional_imports(tree):
     return out
 
 
+# ---------- platform-specific imports (requirements-linux.txt / requirements-windows.txt) ----------
+# Packages only one platform needs go in a requirements file of their own, next to requirements.txt (which holds
+# what every platform needs): the launchers install requirements.txt plus their platform's file, and a DWC plugin
+# lists requirements.txt and requirements-linux.txt in plugin.json. A package already in any of the three files
+# stays where it is: that is how a package Prepare cannot classify by itself is put right once.
+PLATFORM_FILES = {"linux": "requirements-linux.txt", "windows": "requirements-windows.txt"}
+THIS_PLATFORM = "windows" if IS_WINDOWS else "linux"
+OTHER_PLATFORM = {"linux": "windows", "windows": "linux"}
+
+
+def _platform_value(text):
+    """The platform a sys.platform / os.name / platform.system() value means, or None."""
+    text = text.lower()
+    if text.startswith("win") or text == "nt" or text.startswith("cygwin"):
+        return "windows"
+    if text.startswith("linux") or text == "posix":
+        return "linux"
+    return None
+
+
+def _is_platform_expr(node):
+    """Whether node is sys.platform, os.name or platform.system()."""
+    if isinstance(node, ast.Call) and not node.args:
+        node = node.func
+        return isinstance(node, ast.Attribute) and node.attr == "system" and getattr(node.value, "id", "") == "platform"
+    return (isinstance(node, ast.Attribute) and getattr(node.value, "id", "") in ("sys", "os")
+            and node.attr in ("platform", "name"))
+
+
+def platform_test(node, flags):
+    """(platform when the test is true, platform when it is false) for an if-test, each "linux", "windows" or None.
+    Understands sys.platform / os.name / platform.system() compared with a value (==, !=, startswith), not,
+    `and` (true only on the platform one part requires), and the project's own flags made from these (flags:
+    name -> the same pair, e.g. IS_WINDOWS = sys.platform == "win32")."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        true, false = platform_test(node.operand, flags)
+        return false, true
+    if isinstance(node, ast.Name) and node.id in flags:
+        return flags[node.id]
+    if isinstance(node, ast.Attribute) and node.attr in flags:   # e.g. camera_platform.IS_WINDOWS
+        return flags[node.attr]
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+        for value in node.values:
+            true, _ = platform_test(value, flags)
+            if true:
+                return true, None   # false says nothing: another part may be what is false
+        return None, None
+    if (isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.Eq, ast.NotEq))
+            and _is_platform_expr(node.left) and isinstance(node.comparators[0], ast.Constant)
+            and isinstance(node.comparators[0].value, str)):
+        p = _platform_value(node.comparators[0].value)
+        if p:
+            return (p, OTHER_PLATFORM[p]) if isinstance(node.ops[0], ast.Eq) else (OTHER_PLATFORM[p], p)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "startswith"
+            and _is_platform_expr(node.func.value) and node.args and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)):
+        p = _platform_value(node.args[0].value)
+        if p:
+            return p, OTHER_PLATFORM[p]
+    return None, None
+
+
+def platform_flags(trees):
+    """name -> (platform when true, when false) for the project's flags made from platform checks, e.g.
+    IS_WINDOWS = sys.platform == "win32", or PICAMERA_AVAILABLE = not IS_WINDOWS and ... (true only on Linux)."""
+    flags = {}
+    for _ in range(3):   # a flag can be made from another one, possibly in another file
+        for tree in trees:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    pair = platform_test(node.value, flags)
+                    if pair != (None, None):
+                        flags[node.targets[0].id] = pair
+    return flags
+
+
+def import_platforms(tree, flags):
+    """{id(import node): "linux" / "windows"} for the imports inside an if whose test is a platform check."""
+    out = {}
+
+    def visit(nodes, platform):
+        for node in nodes:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                if platform:
+                    out[id(node)] = platform
+            elif isinstance(node, ast.If):
+                true, false = platform_test(node.test, flags)
+                visit(node.body, true or platform)
+                visit(node.orelse, false or platform)
+                continue
+            for field in ("body", "orelse", "finalbody", "handlers"):
+                visit(getattr(node, field, None) or [], platform)
+
+    visit(tree.body, None)
+    return out
+
+
 def imported_modules(project, opts, stdlib, lines):
-    """({top-level module name: [files importing it]}, {the same for optional imports}) for the modules the code
-    folder imports that are neither in Python's standard library nor part of the project (any .py file or folder in
-    the code folder). An import is optional when try/except ImportError guards it everywhere it appears."""
+    """({top-level module name: [files importing it]}, {the same for optional imports}, {module: platform}) for the
+    modules the code folder imports that are neither in Python's standard library nor part of the project (any .py
+    file or folder in the code folder). An import is optional when try/except ImportError guards it everywhere it
+    appears. A module's platform is "linux" or "windows" when only that platform imports it: everywhere it is
+    imported, a platform check guards it (see platform_test), or it is in a project module only imported that way
+    (e.g. a Windows-only helper imported under `if IS_WINDOWS:`); otherwise None."""
     local, files = set(), []
     for dirpath, dirnames, filenames in py_tree(os.path.join(project, code_dir(opts))):
         local.update(dirnames)
@@ -791,32 +891,50 @@ def imported_modules(project, opts, stdlib, lines):
             if n.endswith(".py"):
                 local.add(n[:-3])
                 files.append(os.path.join(dirpath, n))
-    found, optional = {}, {}
+    parsed = []   # (rel, module name, tree)
     for path in files:
         rel = os.path.relpath(path, project).replace(os.sep, "/")
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                tree = ast.parse(f.read(), rel)
+                parsed.append((rel, os.path.splitext(os.path.basename(path))[0], ast.parse(f.read(), rel)))
         except (SyntaxError, ValueError, OSError) as e:
             lines.append(f"Could not read {rel}, so its imports are not counted: {e}")
-            continue
-        guarded = optional_imports(tree)
+
+    def imports(tree):
+        """(import node, [top-level names]) for each import in tree."""
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                names = [a.name for a in node.names]
+                yield node, [a.name.split(".")[0] for a in node.names]
             elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                names = [node.module]   # from x import y (relative imports are always the project's own)
-            else:
-                continue
-            for name in names:
-                top = name.split(".")[0]
+                yield node, [node.module.split(".")[0]]   # relative imports are always the project's own
+
+    flags = platform_flags([tree for _, _, tree in parsed])
+    guards = {rel: import_platforms(tree, flags) for rel, _, tree in parsed}
+    # A project module imported only under one platform's check belongs to that platform, with all it imports
+    sites = {}   # project module -> platforms of the places importing it (None = unguarded)
+    for rel, _, tree in parsed:
+        for node, names in imports(tree):
+            for top in names:
+                if top in local:
+                    sites.setdefault(top, set()).add(guards[rel].get(id(node)))
+    module_platform = {m: next(iter(p)) for m, p in sites.items() if len(p) == 1 and None not in p}
+
+    found, optional, platforms = {}, {}, {}
+    for rel, module, tree in parsed:
+        guarded = optional_imports(tree)
+        for node, names in imports(tree):
+            for top in names:
                 if top not in stdlib and top not in local and top != "__future__":
                     where = optional if id(node) in guarded else found
                     where.setdefault(top, [])
                     if rel not in where[top]:
                         where[top].append(rel)
+                    if where is found:
+                        platforms.setdefault(top, set()).add(guards[rel].get(id(node)) or module_platform.get(module))
     order = lambda d: dict(sorted(d.items(), key=lambda kv: kv[0].lower()))
-    return order(found), order({k: v for k, v in optional.items() if k not in found})
+    # Only one platform when every place importing it is that platform's
+    platforms = {m: next(iter(p)) if len(p) == 1 else None for m, p in platforms.items()}
+    return order(found), order({k: v for k, v in optional.items() if k not in found}), platforms
 
 
 def listed_requirements(text):
@@ -845,36 +963,53 @@ def marker_applies(marker):
         return True
 
 
-def update_requirements(project, opts, packages, lines, other_platform=()):
-    """Add the pip packages not yet listed to the project's requirements.txt (one is made in the code folder
-    if there is none). Nothing already in it is changed or removed. other_platform: listed packages the code
-    imports that are for another platform (not added, but not reported as unused either).
-    Returns its path relative to the project."""
-    rel = requirements_file(project, opts) or requirements_places(opts)[0]
-    path = os.path.join(project, rel)
-    text = ""
-    if os.path.isfile(path):
-        with open(path, encoding="utf-8-sig") as f:
-            text = f.read()
-    listed = [name for name, _ in listed_requirements(text)]
-    have = {pip_key(x) for x in listed}
-    add = [p for p in packages if pip_key(p) not in have]
-    wanted = {pip_key(p) for p in [*packages, *other_platform]}
-    if not text:
-        text = ("# What pip installs into the program's venv. Made by Prepare from the program's imports:\n"
-                "# edit it as needed (Prepare only ever adds packages that are missing).\n")
-    if add or not os.path.isfile(path):
+def requirements_files(project, opts):
+    """{"common": requirements.txt, "linux": requirements-linux.txt, "windows": requirements-windows.txt}, relative
+    to the project: the platform files next to requirements.txt (which is made in the code folder if there is none).
+    The files need not exist."""
+    common = requirements_file(project, opts) or requirements_places(opts)[0]
+    folder = posixpath.dirname(common.replace(os.sep, "/"))
+    return {"common": common, **{p: posixpath.join(folder, name) for p, name in PLATFORM_FILES.items()}}
+
+
+def update_requirements(project, req_files, additions, listed, used, lines):
+    """Add packages to the requirements files (additions: which file -> packages): requirements.txt is made if
+    there is none, a platform file only when something is added to it. Nothing already listed is changed or
+    removed. Returns the files to install on this computer, relative to the project: requirements.txt, and this
+    platform's file if there is one."""
+    header = {"common": "# What pip installs into the program's venv on every platform. Made by Prepare from the program's\n"
+                        "# imports: edit it as needed (Prepare only ever adds packages that are missing). Packages only one\n"
+                        "# platform needs go in requirements-linux.txt / requirements-windows.txt next to it.\n",
+              "linux": "# Installed as well as requirements.txt on Linux only (run.sh; a DWC plugin lists it in plugin.json).\n"
+                       "# Made by Prepare: edit it as needed (Prepare only ever adds packages that are missing).\n",
+              "windows": "# Installed as well as requirements.txt on Windows only (run.bat). Made by Prepare: edit it as\n"
+                         "# needed (Prepare only ever adds packages that are missing).\n"}
+    for which, rel in req_files.items():
+        path = os.path.join(project, rel)
+        exists = os.path.isfile(path)
+        add = additions.get(which, [])
+        if not add and (exists or which != "common"):
+            if exists:
+                lines.append(f"{rel}: nothing to add")
+            continue
+        text = ""
+        if exists:
+            with open(path, encoding="utf-8-sig") as f:
+                text = f.read()
+        if not text:
+            text = header[which]
         if not text.endswith("\n"):
             text += "\n"
         text += "".join(p + "\n" for p in add)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
-    lines.append(f"{rel}: " + ("added " + ", ".join(add) if add else "nothing to add")
-                 + (" (new file)" if not listed and add else ""))
-    unused = [x for x in listed if pip_key(x) not in wanted]
+        lines.append(f"{rel}: " + ("added " + ", ".join(add) if add else "made") + ("" if exists else " (new file)"))
+    unused = [name for key, (name, _, _) in listed.items() if key not in used]
     if unused:
         lines.append("Listed but not imported by the code (left in, as the program may still need them): " + ", ".join(unused))
-    return rel
+    platform_file = req_files[THIS_PLATFORM]
+    return [req_files["common"]] + ([platform_file] if os.path.isfile(os.path.join(project, platform_file)) else [])
 
 
 def venv_uses_system(venv):
@@ -898,39 +1033,66 @@ def launcher_texts(opts, req):
     """run.sh and run.bat, to start the main program with its venv from the project folder (or the top of the
     standalone ZIP, which holds the project folder's files). With no venv - e.g. just unzipped from a release, which
     never holds one - the launcher makes it first and installs req (requirements.txt, relative to the project) into
-    it. On Linux the venv can see the system's packages (--system-site-packages); on Windows it cannot, as Prepare
-    makes it."""
+    it, with this platform's requirements file next to it (requirements-linux.txt / requirements-windows.txt) when
+    there is one. On Linux the venv can see the system's packages (--system-site-packages); on Windows it cannot, as
+    Prepare makes it."""
     main = opts["main"]
     win_main, win_req = main.replace("/", "\\"), req.replace("/", "\\")
+    linux_req = posixpath.join(posixpath.dirname(req), PLATFORM_FILES["linux"])
+    windows_req = posixpath.join(posixpath.dirname(req), PLATFORM_FILES["windows"]).replace("/", "\\")
     return {
         "run.sh": ("#!/bin/bash\n"
                    "# Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\n"
                    f"# unzipped from a release - it is made first, able to see the system's packages, and {req}\n"
-                   "# is installed into it.\n"
+                   f"# (with {linux_req}, if there is one) is installed into it.\n"
                    'cd "$(dirname "$0")" || exit 1\n'
+                   f'reqs=(-r "{req}")\n'
+                   f'[ -f "{linux_req}" ] && reqs+=(-r "{linux_req}")\n'
                    "if [ ! -x venv/bin/python ]; then\n"
                    f'\techo "First run: making the venv and installing {req} into it"\n'
-                   f"\tpython3 -m venv --system-site-packages venv && venv/bin/python -m pip install -r {req} || {{\n"
+                   "\tpython3 -m venv --system-site-packages venv || {\n"
                    '\t\techo "Could not make the venv. On Debian or Raspberry Pi OS the venv module needs: sudo apt install python3-venv"\n'
                    "\t\trm -rf venv   # a half-made venv would be taken as ready next time\n"
                    "\t\texit 1\n"
                    "\t}\n"
+                   '\tvenv/bin/python -m pip install "${reqs[@]}" || {\n'
+                   '\t\techo "Could not install the requirements into the venv - see the pip messages above"\n'
+                   "\t\trm -rf venv\n"
+                   "\t\texit 1\n"
+                   "\t}\n"
                    "fi\n"
                    f'exec venv/bin/python -u {main} "$@"\n'),
+        # Started by double-clicking, its window closes as soon as it ends: so it pauses whenever something went
+        # wrong, to leave the reason on screen.
         "run.bat": ("@echo off\r\n"
                     "rem Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\r\n"
-                    f"rem unzipped from a release - it is made first and {win_req} is installed into it.\r\n"
+                    f"rem unzipped from a release - it is made first and {win_req} (with {windows_req}, if there is\r\n"
+                    "rem one) is installed into it.\r\n"
                     'cd /d "%~dp0"\r\n'
+                    # Set outside the ( ) block below: %REQS% inside a block is read before the block runs
+                    f'set REQS=-r "{win_req}"\r\n'
+                    f'if exist "{windows_req}" set REQS=%REQS% -r "{windows_req}"\r\n'
                     "if not exist venv\\Scripts\\python.exe (\r\n"
                     f"  echo First run: making the venv and installing {win_req} into it\r\n"
-                    "  py -3 -m venv venv 2>nul || python -m venv venv || goto failed\r\n"
-                    f"  venv\\Scripts\\python.exe -m pip install -r {win_req} || goto failed\r\n"
+                    "  py -3 -m venv venv 2>nul || python -m venv venv || goto novenv\r\n"
+                    "  venv\\Scripts\\python.exe -m pip install %REQS% || goto nopip\r\n"
                     ")\r\n"
                     f"venv\\Scripts\\python.exe -u {win_main} %*\r\n"
-                    "exit /b\r\n"
+                    "set CODE=%errorlevel%\r\n"
+                    "if not %CODE%==0 (\r\n"
+                    "  echo.\r\n"
+                    f"  echo {win_main} stopped with an error ^(exit code %CODE%^) - see the messages above\r\n"
+                    "  pause\r\n"
+                    ")\r\n"
+                    "exit /b %CODE%\r\n"
+                    ":novenv\r\n"
+                    'echo Could not make the venv: install Python 3 from python.org ^(tick "Add python.exe to PATH"^) and run this again\r\n'
+                    "goto failed\r\n"
+                    ":nopip\r\n"
+                    "echo Could not install the requirements into the venv - see the pip messages above\r\n"
                     ":failed\r\n"
-                    "echo Could not make the venv: install Python 3 from python.org and run this again\r\n"
                     "rmdir /s /q venv 2>nul\r\n"
+                    "pause\r\n"
                     "exit /b 1\r\n"),
     }
 
@@ -1086,44 +1248,69 @@ def run_prepare_job(lines, project, opts):
             raise RuntimeError(f"Could not ask {py} about its packages: {probe.stderr.strip()}")
         info = json.loads(probe.stdout)
         lines.append(f"Code folder: {code_dir(opts) or 'the project folder'} (where the main program {opts['main']} is)")
-        modules, optional = imported_modules(project, opts, set(info["stdlib"]), lines)
-        req_path = os.path.join(project, requirements_file(project, opts)) if requirements_file(project, opts) else ""
-        listed = {}
-        if req_path:
-            with open(req_path, encoding="utf-8-sig") as f:
-                listed = {pip_key(name): (name, marker) for name, marker in listed_requirements(f.read())}
-        packages, other_platform, other_platform_packages = [], set(), []
+        modules, optional, platforms = imported_modules(project, opts, set(info["stdlib"]), lines)
+        req_files = requirements_files(project, opts)
+        listed = {}   # pip key -> (name, marker, which file: "common", "linux" or "windows")
+        for which, rel in req_files.items():
+            path = os.path.join(project, rel)
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8-sig") as f:
+                    for name, marker in listed_requirements(f.read()):
+                        listed.setdefault(pip_key(name), (name, marker, which))
+        additions = {which: [] for which in req_files}
+        used = set()   # pip keys of the packages the code needs, wherever they are listed
+        other_platform = set()
         for module, files in modules.items():
             dists = info["dists"].get(module) or []
-            # A package already in requirements.txt that provides the module covers it, whichever one it is
+            # A package already in a requirements file that provides the module covers it, whichever one it is
             providers = dists + ALTERNATIVES.get(module, []) + [PIP_NAMES.get(module, module)]
             listed_as = next((listed[pip_key(p)] for p in providers if pip_key(p) in listed), None)
-            if listed_as and not marker_applies(listed_as[1]):
-                # e.g. a Windows-only package, imported only when the program runs on Windows
-                other_platform.add(module)
-                other_platform_packages.append(listed_as[0])
-                lines.append(f"  {module:<20} -> {listed_as[0]} (listed for {listed_as[1]}: not for this computer, "
-                             f"so not installed or checked here)   imported in {', '.join(files)}")
-                continue
             if listed_as:
-                package, how = listed_as[0], ""
-            elif dists:
-                package, how = dists[0], ""
-                if len(set(map(pip_key, dists))) > 1:
-                    how = f" (also provided by {', '.join(dists[1:])})"
+                package, marker, which = listed_as
+                used.add(pip_key(package))
+                if which not in ("common", THIS_PLATFORM) or not marker_applies(marker):
+                    # e.g. a Windows-only package, imported only when the program runs on Windows
+                    other_platform.add(module)
+                    why = f"in {req_files[which]}" if which != "common" else f"listed for {marker}"
+                    lines.append(f"  {module:<20} -> {package} ({why}: not for this computer, so not installed or "
+                                 f"checked here)   imported in {', '.join(files)}")
+                    continue
+                how = f" (in {req_files[which]})" if which != "common" else ""
             else:
-                package, how = PIP_NAMES.get(module, module), " (not installed on this computer: pip name guessed)"
-            if pip_key(package) not in map(pip_key, packages):
-                packages.append(package)
+                if dists:
+                    package, how = dists[0], ""
+                    if len(set(map(pip_key, dists))) > 1:
+                        how = f" (also provided by {', '.join(dists[1:])})"
+                else:
+                    package, how = PIP_NAMES.get(module, module), " (not installed on this computer: pip name guessed)"
+                used.add(pip_key(package))
+                which = platforms.get(module) or "common"
+                if pip_key(package) not in {pip_key(x) for x in additions[which]}:
+                    additions[which].append(package)
+                if which != "common":
+                    how += f" ({which} only - imported under a platform check: added to {req_files[which]})"
+                    if which != THIS_PLATFORM:
+                        other_platform.add(module)
+                        lines.append(f"  {module:<20} -> {package}{how}, not installed or checked here   "
+                                     f"imported in {', '.join(files)}")
+                        continue
             lines.append(f"  {module:<20} -> {package}{how}   imported in {', '.join(files)}")
         if not modules:
             lines.append("  Only Python's standard library and the project's own modules are imported")
         for module, files in optional.items():
-            lines.append(f"  {module:<20} optional (try/except ImportError) in {', '.join(files)}: not added, "
-                         f"add it to requirements.txt yourself if you want it")
+            providers = (info["dists"].get(module) or []) + ALTERNATIVES.get(module, []) + [PIP_NAMES.get(module, module)]
+            listed_as = next((listed[pip_key(p)] for p in providers if pip_key(p) in listed), None)
+            if listed_as:
+                used.add(pip_key(listed_as[0]))   # listed by hand: it is wanted
+                lines.append(f"  {module:<20} -> {listed_as[0]} (optional, in {req_files[listed_as[2]]})   "
+                             f"imported in {', '.join(files)}")
+            else:
+                lines.append(f"  {module:<20} optional (try/except ImportError) in {', '.join(files)}: not added - add it "
+                             f"to requirements.txt (or requirements-linux.txt / -windows.txt) yourself if you want it")
 
-        lines.append("=== requirements.txt ===")
-        req = update_requirements(project, opts, packages, lines, other_platform_packages)
+        lines.append("=== Requirements ===")
+        reqs = update_requirements(project, req_files, additions, listed, used, lines)
+        req = reqs[0]   # requirements.txt (the launchers find the platform files next to it)
 
         venv = os.path.join(project, "venv")
         site = opts["site_packages"] and not IS_WINDOWS   # as install.py does
@@ -1143,11 +1330,11 @@ def run_prepare_job(lines, project, opts):
                     shutil.rmtree(venv, ignore_errors=True)   # a half-made venv would be taken as ready next time
                 return
         vpy = venv_python(venv)
-        code = job.step(lines, [vpy, "-m", "pip", "install", "-r", os.path.join(project, req)], project,
-                        title=f"Install {req} into the venv")
+        code = job.step(lines, [vpy, "-m", "pip", "install", *[a for r in reqs for a in ("-r", os.path.join(project, r))]],
+                        project, title=f"Install {' and '.join(reqs)} into the venv")
         if code != 0:
             if code is not None:
-                lines.append(f"pip could not install everything in {req}: correct it and press Prepare again")
+                lines.append(f"pip could not install everything in {' and '.join(reqs)}: correct it and press Prepare again")
             return
         to_check = [m for m in modules if m not in other_platform]
         if to_check:
@@ -1170,7 +1357,7 @@ def run_prepare_job(lines, project, opts):
         lines.append("")
         lines.append("Ready:" if code == 0 else "Prepared, with the problems above:")
         lines.append(f"  main program  {opts['main']}" + (f", version {version}" if version else ", no version set"))
-        lines.append(f"  requirements  {req}")
+        lines.append(f"  requirements  {', '.join(reqs)}")
         lines.append(f"  venv          {venv}")
         ok = code == 0
     except Exception as e:

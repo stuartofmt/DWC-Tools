@@ -15,15 +15,22 @@
 # the version comes from the tag. This script then shows the latest v* tag, asks for the version to release and
 # uses the tag v<version>.
 #
-# Pushing the tag starts the Release workflow (.github/workflows/release.yml). Approve the run in the
-# repository's Actions tab when it pauses at dwc-release-approval.
+# Pushing the tag starts the Release workflow (.github/workflows/release.yml, which calls the shared workflow in
+# DWC-Tools). Approve the run in the repository's Actions tab when it pauses at dwc-release-approval.
 #
-# Run from VS Code's terminal (so the GitHub sign-in is available):  ./scripts/release.sh
+# This one copy is shared by every repository that uses the release workflow, so run it from INSIDE the repository
+# to release, in VS Code's terminal (so the GitHub sign-in is available):
+#   ~/DWC/Tools/Prep_and_Package/scripts/release.sh
 # On Windows run it from Git Bash (it comes with Git for Windows, and can be VS Code's terminal).
 
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+if ! TOP=$(git rev-parse --show-toplevel 2>/dev/null); then
+	echo "Error: run this from inside the git repository to release (cd to its folder first)."
+	exit 1
+fi
+cd "$TOP"
+echo "Repository:   $TOP"
 
 # Use the first plugin.json found: the repository root first, then the shallowest subfolder (skipping
 # .git, node_modules and venv). The Release workflow stops if there is more than one, so warn about that.
@@ -86,7 +93,7 @@ echo "Branch:       $BRANCH"
 if [ -n "$MANIFEST" ]; then
 	echo "Version:      $VERSION  (from $MANIFEST)"
 	echo "DWC version:  ${DWC_VERSION:-none (no DWC interface - the plugin is zipped, not built)}"
-	# A standalone/ folder: the Release workflow also builds a standalone ZIP (scripts/release-standalone.mjs)
+	# A standalone/ folder: the Release workflow also builds a standalone ZIP (release-standalone.mjs)
 	[ -d standalone ] && echo "Standalone:   also released as standalone-<id>-$VERSION.zip (standalone/ folder)"
 else
 	echo "Version:      $VERSION  (standalone - no plugin.json)"

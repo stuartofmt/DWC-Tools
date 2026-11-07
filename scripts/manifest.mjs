@@ -1,7 +1,7 @@
 /**
  * Locate and read the plugin's plugin.json, so the release scripts need no per-plugin changes.
  *
- * Search order (the same as the release workflow and scripts/release.sh):
+ * Search order (the same as the release workflow and release.sh):
  *   1. MANIFEST, if set (path relative to the repository root; the release workflow sets it)
  *   2. plugin.json at the repository root
  *   3. the shallowest plugin.json in a subfolder (alphabetical within a depth), skipping .git,
@@ -12,10 +12,27 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+// These scripts are shared by every repository that uses the release workflow (they live in DWC-Tools, in the
+// Prep_and_Package branch's scripts/ folder), so the repository being released is not the one they are in. It is
+// RELEASE_REPO when set (the release workflow sets it), otherwise the git checkout holding the current folder -
+// run them from inside the repository. Its own settings are in its scripts/ folder (release-channel.txt,
+// release-exclude.txt and release-titles.txt).
+export const repoRoot = findRepoRoot();
+
+// This folder: the shared scripts
+export const scriptsDir = dirname(fileURLToPath(import.meta.url));
+
+function findRepoRoot() {
+	if (process.env.RELEASE_REPO) return resolve(process.env.RELEASE_REPO);
+	try {
+		return execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+	} catch {
+		return process.cwd();
+	}
+}
 
 const SKIP = new Set([".git", "node_modules", "venv"]);
 

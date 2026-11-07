@@ -80,14 +80,17 @@ makes the rest.</p>
 could not be created, that package is missing and has to be installed once by the system administrator (<code>sudo apt install python3-venv</code>).</p>
 
 <h3>Copy Plugin Release Workflow</h3>
-<p>The workflow is kept in the <code>plugin release workflow</code> folder next to this app's program, laid out as it goes into a plugin's folder:</p>
-<pre>.github/workflows/release.yml      the workflow: builds the plugin's ZIP on GitHub and publishes the release
-.github/workflows/release.yml.md   its notes: how to release, which DWC version is used, one-time setup
-scripts/release.sh                 run it to tag and release the version in plugin.json (or the one you enter)
-scripts/*.mjs                      helpers the workflow runs (release title, notes, files left out, ...)
+<p>There is one release workflow for every plugin: <code>.github/workflows/plugin-release.yml</code> in this branch of DWC-Tools, with
+its notes (<a href="https://github.com/stuartofmt/DWC-Tools/blob/Prep_and_Package/.github/workflows/plugin-release.yml.md" target="_blank" rel="noopener">plugin-release.yml.md</a>) and the scripts it runs in <code>scripts/</code>. A plugin only has a short workflow that calls it, and its own
+settings. They are kept in the <code>plugin release workflow</code> folder next to this app's program, laid out as they go into a plugin's folder:</p>
+<pre>.github/workflows/release.yml      calls the shared workflow, which builds the plugin's ZIP on GitHub and publishes the release
 scripts/release-channel.txt        settings: "latest" or "maintenance" for this branch
 scripts/release-exclude.txt        settings: files to leave out of the ZIP
 scripts/release-titles.txt         settings: the names used for release titles</pre>
+<p>To tag and release the version in <code>plugin.json</code> (or the one you enter), run <code>~/DWC/Tools/Prep_and_Package/scripts/release.sh</code>
+from inside the plugin's repository. A change to the shared workflow or its scripts reaches every plugin at its next release once the
+<code>workflow-v1</code> tag is moved - the notes explain how. Copy never deletes files: a plugin that had the old full copy of the workflow
+still has its <code>.github/workflows/release.yml.md</code> and <code>scripts/*.mjs</code> and <code>scripts/release.sh</code>, which can be deleted.</p>
 <ol>
   <li>Choose the plugin's folder on this computer: the top of its git checkout (the folder holding <code>.git</code>), with the plugin's
       <code>plugin.json</code> in it or below it. Type its path, pick a recent one, or press <b>Browse…</b>, where folders with a
@@ -111,10 +114,10 @@ workflow runs once it is on GitHub.</p>
 the top of the git repository with the <code>run.sh</code> / <code>run.bat</code> launchers, <code>source.txt</code> (the project folder) and
 <code>exclude.txt</code>. Once it is committed, the workflow builds the ZIP - the project folder's files, without what <code>exclude.txt</code>
 lists, plus the launchers - and attaches it to the Release: <code>standalone-&lt;id&gt;-&lt;version&gt;.zip</code> next to a plugin ZIP, or
-<code>&lt;repository&gt;-&lt;version&gt;.zip</code> on its own. <code>node scripts/release-standalone.mjs</code> builds it locally to try it out.
-<code>release.yml.md</code> has the details.</p>
+<code>&lt;repository&gt;-&lt;version&gt;.zip</code> on its own. <code>node ~/DWC/Tools/Prep_and_Package/scripts/release-standalone.mjs</code>, run from inside the repository, builds it locally to try it out.
+The workflow's notes have the details.</p>
 <p>Once per repository on GitHub: allow Actions (Settings → Actions → General) and add an environment named exactly
-<code>dwc-release-approval</code> with yourself as a required reviewer (Settings → Environments). <code>release.yml.md</code> explains this
+<code>dwc-release-approval</code> with yourself as a required reviewer (Settings → Environments). The workflow's notes explain this
 and how to release.</p>
 
 <h3>What is remembered</h3>

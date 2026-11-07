@@ -1,8 +1,10 @@
 <page-frame title="Copy Plugin Release Workflow">
   <p class="note mb-4">Copies the GitHub release workflow for DWC plugins into a plugin's folder on this computer:
-  <code>.github/workflows/release.yml</code> (with its notes, <code>release.yml.md</code>) and the <code>scripts</code> it uses.
+  a short <code>.github/workflows/release.yml</code> that calls the one shared workflow in DWC-Tools, and the plugin's own settings in
+  <code>scripts</code>.
   Only files on disk change: nothing is committed or pushed. The workflow reaches GitHub when you commit and push these files yourself;
-  after that, pushing a version tag builds the plugin's ZIP and publishes a release (see <code>release.yml.md</code>).
+  after that, pushing a version tag builds the plugin's ZIP and publishes a release (see <a href="https://github.com/stuartofmt/DWC-Tools/blob/Prep_and_Package/.github/workflows/plugin-release.yml.md" target="_blank" rel="noopener">plugin-release.yml.md</a>). To tag a release, run
+  <code>~/DWC/Tools/Prep_and_Package/scripts/release.sh</code> from inside the plugin's repository.
   Copy again at any time to update the workflow: the plugin's own settings files are kept.</p>
 
   <v-combobox v-model="path" :items="recent" label="Plugin folder" placeholder="Full path, or press Browse"
@@ -48,7 +50,7 @@
         <ul class="ml-6"><li v-for="d in result.done" :key="d.file"><code>{{ d.file }}</code> {{ d.what }}</li></ul>
         <div class="mt-2">Only these files on disk changed. Next: commit them and push, which is when GitHub gets the workflow. Once per repository on GitHub: allow Actions
           (Settings → Actions → General) and add an environment named exactly <code>dwc-release-approval</code> with yourself as a
-          required reviewer (Settings → Environments). <code>.github/workflows/release.yml.md</code> explains how to release.</div>
+          required reviewer (Settings → Environments). <a href="https://github.com/stuartofmt/DWC-Tools/blob/Prep_and_Package/.github/workflows/plugin-release.yml.md" target="_blank" rel="noopener">plugin-release.yml.md</a> explains how to release.</div>
       </v-alert>
     </template>
   </template>

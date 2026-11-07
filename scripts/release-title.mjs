@@ -7,7 +7,7 @@
  * the tag. The version's position among the semver-sorted `v*` tags with this branch's -dwc suffix
  * is its index into that list (wrapping if it runs out), so each release gets
  * a stable, distinct title with no per-release bookkeeping. The release workflow uses the output as the
- * Release name; run it locally to preview: `node scripts/release-title.mjs [vX.Y.Z]`.
+ * Release name; run it locally from inside the repository to preview: `node <these scripts>/release-title.mjs [vX.Y.Z]`.
  *
  * A standalone repository (no plugin.json) has the branch being released in brackets after the tag:
  * `vX.Y.Z (main) — "<title>"`.
@@ -16,18 +16,16 @@
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isStandalone, readManifest, tagSuffix } from "./manifest.mjs";
-
-const here = dirname(fileURLToPath(import.meta.url));
+import { isStandalone, readManifest, repoRoot, tagSuffix } from "./manifest.mjs";
 
 // Warn (here and in the workflow) once this few unused titles remain, so the list gets topped up.
 export const LOW_TITLES_THRESHOLD = 5;
 
 function git(args) {
 	try {
-		return execFileSync("git", args, { encoding: "utf8" }).trim();
+		return execFileSync("git", args, { encoding: "utf8", cwd: repoRoot }).trim();  // The repository being released
 	} catch {
 		return "";
 	}
@@ -82,7 +80,7 @@ function releaseBranch() {
  * repository with no plugin.json, to PLUGIN_VERSION or the tag being released).
  */
 export function pickTitle(version) {
-	const titlesFile = join(here, "release-titles.txt");
+	const titlesFile = join(repoRoot, "scripts", "release-titles.txt");  // This repository's own titles
 	const titles = (existsSync(titlesFile) ? readFileSync(titlesFile, "utf8") : "")
 		.split("\n")
 		.map((l) => l.trim())

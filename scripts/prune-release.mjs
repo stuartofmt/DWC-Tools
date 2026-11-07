@@ -5,8 +5,9 @@
  * leftovers plugin_tools always leaves out (__pycache__/, venv/, .git/, *.pyc, *.log).
  *
  * Usage:
- *   node scripts/prune-release.mjs --list     show what would be removed - changes nothing
- *   node scripts/prune-release.mjs --delete   remove it. The release workflow does this on a copy of the
+ *   node <these scripts>/prune-release.mjs --list     show what would be removed - changes nothing (run from inside
+ *                                                    the repository)
+ *   node <these scripts>/prune-release.mjs --delete   remove it. The release workflow does this on a copy of the
  *                                             Code folder (--dir), never on the checkout itself. Outside
  *                                             GitHub Actions it is refused unless --force is added too, so a
  *                                             working copy is not emptied by mistake.
@@ -22,7 +23,7 @@
  */
 import { existsSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { isStandalone, manifestPath, repoRoot, STANDALONE_DIR } from "./manifest.mjs";
+import { isStandalone, manifestPath, repoRoot, scriptsDir, STANDALONE_DIR } from "./manifest.mjs";
 import { compile, findMatches, readPatterns, removeMatches } from "./release-patterns.mjs";
 
 const EXCLUDE_FILE = join(repoRoot, "scripts", "release-exclude.txt");
@@ -33,7 +34,7 @@ const args = new Set(argv);
 const remove = args.has("--delete");
 const dirIndex = argv.indexOf("--dir");
 if ((!remove && !args.has("--list")) || (dirIndex >= 0 && !argv[dirIndex + 1])) {
-	console.error("Usage: node scripts/prune-release.mjs --list | --delete [--force] [--dir <folder>]");
+	console.error(`Usage: node ${join(scriptsDir, "prune-release.mjs")} --list | --delete [--force] [--dir <folder>]`);
 	process.exit(2);
 }
 if (remove && process.env.GITHUB_ACTIONS !== "true" && !args.has("--force")) {
@@ -43,7 +44,7 @@ if (remove && process.env.GITHUB_ACTIONS !== "true" && !args.has("--force")) {
 
 if (isStandalone()) {
 	console.log("No plugin.json - there is no plugin ZIP. The standalone ZIP leaves files out by itself: "
-		+ "node scripts/release-standalone.mjs --list");
+		+ `node ${join(scriptsDir, "release-standalone.mjs")} --list`);
 	process.exit(0);
 }
 
