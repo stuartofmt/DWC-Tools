@@ -1043,6 +1043,8 @@ def venv_uses_system(venv):
 
 # The first line of a launcher's comment: marks a launcher Prepare made, which it may make again (see make_standalone)
 LAUNCHER_MARK = "(made by Prepare in Prep_and_Package)"
+# How long a launcher waits, after starting the program with no console, to see that it did not stop at once
+LAUNCHER_CHECK_SECONDS = 5
 
 
 def launcher_texts(opts, req):
@@ -1051,17 +1053,25 @@ def launcher_texts(opts, req):
     never holds one - the launcher makes it first and installs req (requirements.txt, relative to the project) into
     it, with this platform's requirements file next to it (requirements-linux.txt / requirements-windows.txt) when
     there is one. On Linux the venv can see the system's packages (--system-site-packages); on Windows it cannot, as
-    Prepare makes it."""
+    Prepare makes it.
+    The program then runs with no console: closing the terminal or window does not stop it - its Terminate button
+    does. The launcher waits a few seconds and reports it if the program stopped at once with an error. With
+    "console" as the first argument the program runs in the terminal / window instead, showing its messages."""
     main = opts["main"]
     win_main, win_req = main.replace("/", "\\"), req.replace("/", "\\")
     linux_req = posixpath.join(posixpath.dirname(req), PLATFORM_FILES["linux"])
     windows_req = posixpath.join(posixpath.dirname(req), PLATFORM_FILES["windows"]).replace("/", "\\")
+    wait = LAUNCHER_CHECK_SECONDS
     return {
         "run.sh": ("#!/bin/bash\n"
                    "# Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\n"
                    f"# unzipped from a release - it is made first, able to see the system's packages, and {req}\n"
                    f"# (with {linux_req}, if there is one) is installed into it.\n"
+                   "# The program runs in the background, apart from this terminal (closing it does not stop the program):\n"
+                   "# stop it with its Terminate button.  ./run.sh console runs it in this terminal, showing its messages.\n"
                    'cd "$(dirname "$0")" || exit 1\n'
+                   "console=\n"
+                   'if [ "$1" = console ]; then console=1; shift; fi\n'
                    f'reqs=(-r "{req}")\n'
                    f'[ -f "{linux_req}" ] && reqs+=(-r "{linux_req}")\n'
                    "if [ ! -x venv/bin/python ]; then\n"
@@ -1077,14 +1087,45 @@ def launcher_texts(opts, req):
                    "\t\texit 1\n"
                    "\t}\n"
                    "fi\n"
-                   f'exec venv/bin/python -u {main} "$@"\n'),
+                   'if [ -n "$console" ]; then\n'
+                   f'\texec venv/bin/python -u {main} "$@"\n'
+                   "fi\n"
+                   "# A session of its own: no terminal, so closing this one does not stop it\n"
+                   f'setsid venv/bin/python -u {main} "$@" </dev/null >/dev/null 2>&1 &\n'
+                   "pid=$!\n"
+                   f'echo "Starting {main} in the background - checking that it keeps running"\n'
+                   f"sleep {wait}\n"
+                   'if ! kill -0 "$pid" 2>/dev/null; then\n'
+                   '\twait "$pid"\n'
+                   "\tcode=$?\n"
+                   '\tif [ "$code" -ne 0 ]; then\n'
+                   f'\t\techo "{main} stopped at once with an error (exit code $code) - ./run.sh console shows why"\n'
+                   '\t\texit "$code"\n'
+                   "\tfi\n"
+                   "\texit 0\n"
+                   "fi\n"
+                   f'echo "{main} is running in the background (process $pid). Stop it with its Terminate button."\n'),
         # Started by double-clicking, its window closes as soon as it ends: so it pauses whenever something went
         # wrong, to leave the reason on screen.
         "run.bat": ("@echo off\r\n"
                     "rem Start the program with its venv (made by Prepare in Prep_and_Package). With no venv - e.g. just\r\n"
                     f"rem unzipped from a release - it is made first and {win_req} (with {windows_req}, if there is\r\n"
                     "rem one) is installed into it.\r\n"
+                    "rem The program runs with no window (closing this one does not stop it): stop it with its Terminate\r\n"
+                    "rem button.  run.bat console runs it in this window, showing its messages.\r\n"
                     'cd /d "%~dp0"\r\n'
+                    # "console" is taken off the arguments passed to the program (shift does not change %*)
+                    "set CONSOLE=\r\n"
+                    "set ARGS=%*\r\n"
+                    'if /i not "%~1"=="console" goto args\r\n'
+                    "set CONSOLE=1\r\n"
+                    "set ARGS=\r\n"
+                    ":nextarg\r\n"
+                    "shift\r\n"
+                    'if "%~1"=="" goto args\r\n'
+                    "set ARGS=%ARGS% %1\r\n"
+                    "goto nextarg\r\n"
+                    ":args\r\n"
                     # Set outside the ( ) block below: %REQS% inside a block is read before the block runs
                     f'set REQS=-r "{win_req}"\r\n'
                     f'if exist "{windows_req}" set REQS=%REQS% -r "{windows_req}"\r\n'
@@ -1093,7 +1134,24 @@ def launcher_texts(opts, req):
                     "  py -3 -m venv venv 2>nul || python -m venv venv || goto novenv\r\n"
                     "  venv\\Scripts\\python.exe -m pip install %REQS% || goto nopip\r\n"
                     ")\r\n"
-                    f"venv\\Scripts\\python.exe -u {win_main} %*\r\n"
+                    "if defined CONSOLE goto console\r\n"
+                    # A hidden console of its own (python.exe, not pythonw.exe, so its output has somewhere to go):
+                    # closing this window does not stop it. $p.Handle is read so that ExitCode is kept.
+                    f'set RUN_ARGS=-u "{win_main}" %ARGS%\r\n'
+                    'set RUN_PY=%~dp0venv\\Scripts\\python.exe\r\n'
+                    f"echo Starting {win_main} with no window - checking that it keeps running\r\n"
+                    'powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Start-Process -FilePath $env:RUN_PY'
+                    " -ArgumentList $env:RUN_ARGS -WindowStyle Hidden -PassThru; $null = $p.Handle;"
+                    f' if ($p.WaitForExit({wait * 1000})) {{ exit $p.ExitCode }}; exit 0"\r\n'
+                    "set CODE=%errorlevel%\r\n"
+                    "if not %CODE%==0 (\r\n"
+                    "  echo.\r\n"
+                    f"  echo {win_main} stopped at once with an error ^(exit code %CODE%^) - run.bat console shows why\r\n"
+                    "  pause\r\n"
+                    ")\r\n"
+                    "exit /b %CODE%\r\n"
+                    ":console\r\n"
+                    f"venv\\Scripts\\python.exe -u {win_main} %ARGS%\r\n"
                     "set CODE=%errorlevel%\r\n"
                     "if not %CODE%==0 (\r\n"
                     "  echo.\r\n"

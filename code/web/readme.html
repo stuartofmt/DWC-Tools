@@ -73,7 +73,10 @@ makes the rest.</p>
       or the package needs something from the operating system: the log shows the error.</li>
   <li><b>Launchers.</b> <code>run.sh</code> (Linux) and <code>run.bat</code> (Windows) are both added to the project folder, each unless it is there
       already, so the program can be run from there with its venv on either system. With no venv, as in a release just unzipped, they make
-      it first and install <code>requirements.txt</code> into it (on Linux, able to see the system's packages).</li>
+      it first and install <code>requirements.txt</code> into it (on Linux, able to see the system's packages).
+      The program then runs with no console: closing the terminal or window does not stop it, so the program needs a Terminate button
+      of its own. The launcher waits 5 seconds and says so if the program stopped at once with an error. <code>./run.sh console</code> /
+      <code>run.bat console</code> runs it in the terminal or window instead, showing its messages.</li>
 </ol>
 <p>The log ends with the main program, its version, the <code>requirements.txt</code> used and the venv. Run Prepare again whenever the program's imports change.</p>
 <p>Creating a venv needs Python's venv module. Debian and Raspberry Pi OS ship it separately as <code>python3-venv</code>: if the log says the venv
