@@ -68,6 +68,7 @@ jobs:
       release-exists: ${{ steps.resolve.outputs.release-exists }}
       release-url: ${{ steps.resolve.outputs.release-url }}
       make-latest: ${{ steps.resolve.outputs.make-latest }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
       package-mode: ${{ steps.resolve.outputs.package-mode }}
       standalone-build: ${{ steps.resolve.outputs.standalone-build }}
     steps:
@@ -291,8 +292,11 @@ jobs:
             : tag
               ? `\n\nNo published release currently exists for \`${tag}\`. Approve the \`dwc-release-approval\` environment to continue, or reject the deployment to stop this run.`
               : "";
-          appendFileSync(process.env.GITHUB_OUTPUT, `manifest=${manifestPath}\nplugin-name=${manifest.id}\nplugin-version=${manifest.version}\nplugin-dwc-version=${needsBuild ? manifest.dwcVersion : ""}\npackage-mode=${packageMode}\ndwc-ref=${selected}\nrelease-exists=${existingRelease ? "true" : "false"}\nrelease-url=${existingRelease?.html_url ?? ""}\nmake-latest=${channel === "latest"}\nstandalone-build=${standaloneBuild}\n`);
+          // A version with a suffix (e.g. 1.2.3-rc.4, 1.2.3-beta.1) is a GitHub pre-release: never marked Latest
+          const prerelease = manifest.version.includes("-");
+          appendFileSync(process.env.GITHUB_OUTPUT, `manifest=${manifestPath}\nplugin-name=${manifest.id}\nplugin-version=${manifest.version}\nplugin-dwc-version=${needsBuild ? manifest.dwcVersion : ""}\npackage-mode=${packageMode}\ndwc-ref=${selected}\nrelease-exists=${existingRelease ? "true" : "false"}\nrelease-url=${existingRelease?.html_url ?? ""}\nmake-latest=${channel === "latest" && !prerelease}\nprerelease=${prerelease}\nstandalone-build=${standaloneBuild}\n`);
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Release preflight\n\n${standalone ? `- No plugin.json: standalone release of \`${manifest.id}\` (standalone/ folder)\n- Version: \`${manifest.version}\`${tag ? " (from the tag)" : " (test build)"}\n` : `- Plugin manifest: \`${manifestPath}\`\n- Plugin version: \`${manifest.version}\`\n`}- Release channel: \`${channel}\` (tag \`${expectedTag}\`${channel === "latest" ? ", marked Latest" : ", not marked Latest"})\n${needsBuild ? `- Packaging: built with DWC's plugin builder\n- Required DWC version: \`${manifest.dwcVersion}\`\n- Selected DWC release: \`${selected}\`` : standalone ? `- Packaging: the standalone ZIP \`${manifest.id}-${manifest.version}.zip\` only - no plugin ZIP, no DWC build` : "- Packaging: zipped - plugin.json has no dwcVersion, so there is no DWC interface to build"}${standaloneBuild && !standalone ? `\n- Also: \`standalone-${manifest.id}-${manifest.version}.zip\`, built from the \`standalone/\` folder (runs without DWC)` : ""}\n- Left out of the ZIP: see the \"Leave out excluded files\" and \"Build standalone ZIP\" steps (scripts/release-exclude.txt, standalone/exclude.txt)\n${releaseSummary}\n`);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, prerelease ? `- Pre-release: \`${manifest.version}\` has a suffix, so it is published as a pre-release and not marked Latest\n` : "");
           NODE
 
   build:
@@ -499,7 +503,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           draft: false # auto-publish: title + notes are generated
-          make_latest: ${{ needs.resolve-dwc.outputs.make-latest }} # false on a maintenance branch
+          make_latest: ${{ needs.resolve-dwc.outputs.make-latest }} # false on a maintenance branch, or for a pre-release
+          prerelease: ${{ needs.resolve-dwc.outputs.prerelease }} # a version with a suffix, e.g. 1.2.3-rc.4
           name: ${{ steps.title.outputs.name }}
           body: ${{ steps.changelog.outputs.body }}
           files: |

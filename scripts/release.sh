@@ -98,7 +98,12 @@ if [ -n "$MANIFEST" ]; then
 else
 	echo "Version:      $VERSION  (standalone - no plugin.json)"
 fi
-echo "Channel:      $CHANNEL$([ "$CHANNEL" = latest ] && echo "  (Release marked Latest)" || echo "  (Release not marked Latest)")"
+# A version with a suffix (e.g. 1.2.3-rc.4) is published as a pre-release, which is never marked Latest
+case "$VERSION" in
+	*-*) LATEST_NOTE="  (Pre-release - $VERSION has a suffix, so it is not marked Latest)" ;;
+	*) LATEST_NOTE=$([ "$CHANNEL" = latest ] && echo "  (Release marked Latest)" || echo "  (Release not marked Latest)") ;;
+esac
+echo "Channel:      $CHANNEL$LATEST_NOTE"
 echo "Release tag:  $TAG"
 echo
 

@@ -136,6 +136,8 @@ A tag name can only be used once in the whole repository, so every tag ends in `
 | `latest` (default if the file is missing) | The main line | Yes |
 | `maintenance` | A line for an older DWC | No |
 
+Whatever the channel, a version with a suffix (anything after a `-`, e.g. `1.2.3-rc.4` or `1.2.3-beta.1`) is published as a GitHub **pre-release**, which is never marked Latest: the current Latest release stays Latest. The `-dwc<dwcVersion>` on the end of the tag does not count - only `plugin.json`'s version (or, with no `plugin.json`, the version in the tag).
+
 - Release titles are counted separately for each `dwcVersion`.
 - The release notes list the commits since the previous tag in the branch's own history, so they do not mix in the other branches' changes.
 
